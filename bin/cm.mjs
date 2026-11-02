@@ -50,23 +50,30 @@ const help = `cm — Lotus 456 agent CLI   (CANVAS_URL=${BASE})
   cm merge A1:C1 [all|horizontal|vertical] | cm unmerge A1:C1
   cm note B2 "text"
   cm add-sheet Name | rename-sheet Old New
-  cm read @Tehtävät                 a named table as records:  [5] Nimi: Servot · Tila: auki
-  cm mktable Tehtävät B4:E9        name a region (header row first) as a table
-  cm add Tehtävät '{"Nimi":"Akku","Tila":"auki"}' ['{...}']    append records
-  cm update Tehtävät Servot Tila=valmis Vastuu=Isi             key = first-column value (or 'Tila=auki' to match)
-  cm rm Tehtävät Servot | cm rm Tehtävät 'Tila=valmis'
-  cm addcol Tehtävät Huom
-  cm sql "SELECT t.Tehtävä, o.Hinta FROM Tehtävät t JOIN Osat o ON …"   (other workbooks: "doc.Table")
-  cm sql --write "UPDATE Tehtävät SET Tila='valmis' WHERE Vastuu='Isi'"   written back as table ops
-  cm sql --into Yhteenveto@Projekti!K2 "SELECT Tila, COUNT(*) n FROM Tehtävät GROUP BY Tila"
-  cm json Tehtävät                 table as JSON array
-  cm put Tehtävät file.json [Sheet!B2]   replace/create table from JSON array (- = stdin)
-  cm chart column B6:C10 --at K2 --title "Hinnat"      types: column bar line area pie kpi
-  cm chart pie @Osat --x Osa --y Hinta  |  cm chart kpi C12 --title "Avoimia"
+  cm read @Tasks                    a named table as records:  [7] Task: Wire the servos · Status: open
+  cm mktable Tasks B6:E10           name a region (header row first) as a table
+  cm add Tasks '{"Task":"Test battery","Status":"open"}' ['{...}']   append records
+  cm update Tasks 'Wire the servos' Status=done Owner=Alex     key = first-column value (or 'Status=open' to match)
+  cm rm Tasks 'Name the robot' | cm rm Tasks 'Status=done'
+  cm addcol Tasks Priority
+  cm sql "SELECT t.Task, p.Price FROM Tasks t JOIN Parts p ON …"   (other workbooks: "doc.Table")
+  cm sql --write "UPDATE Tasks SET Status='done' WHERE Owner='Alex'"   written back as table ops
+  cm sql --into Summary@Project!K2 "SELECT Status, COUNT(*) n FROM Tasks GROUP BY Status"
+  cm json Tasks                    table as JSON array
+  cm put Tasks file.json [Sheet!B2]      replace/create table from JSON array (- = stdin)
+  cm chart column B6:C10 --at K2 --title "Prices"      types: column bar line area pie kpi
+  cm chart pie @Parts --x Part --y Price  |  cm chart kpi C12 --title "Open tasks"
   cm chart-show chart1             the chart's live data as text
   cm chart-set chart1 type=line title="Uusi"  |  cm chart-rm chart1
   cm image B2 photo.png            upload + =IMAGE("/assets/…") in the cell
   cm export Dashboard [md|html]    sheet as a document (headings, tables, charts, KPIs)
+  cm present Dashboard [chart:status|Tasks|C12] [--combined]   put the user's screen into Live / Focus mode
+  cm present off
+  cm live                          what the user's Live screen shows right now (cards, positions, what's visible)
+  cm panel add id "Title" "text with **bold** and - bullets" [--value 42 --label EUR --image url --span 2]
+  cm panel rm id
+  cm slot logo [--span 1 --h 200 --image /assets/logo.png]   reserve empty space (e.g. for a logo); drag it anywhere
+  cm layout '{"flow":"horizontal","reveal":true,"order":["Dashboard::chart:status", …]}'
   cm find text
   cm commit "message" | cm commits | cm diff [m3|last] | cm restore m3
   cm focus A1:B5 "label"           highlight where you're working
@@ -155,6 +162,31 @@ switch (cmd) {
     break;
   }
   case 'export': out(await call('GET', '/api/export?' + qs({ doc: DOC, sheet: args[0], format: args[1] || 'md' }))); break;
+  case 'live': out(await call('GET', '/api/live')); break;
+  case 'panel': case 'slot': case 'layout': {
+    const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
+    if (cmd === 'layout') { await ops([{ op: 'liveLayout', ...JSON.parse(args[0]) }]); break; }
+    if (cmd === 'panel' && args[0] === 'rm') { await ops([{ op: 'removePanel', id: args[1] }]); break; }
+    const value = flag('value'), label = flag('label'), image = flag('image'), span = flag('span'), h = flag('h');
+    if (cmd === 'panel') {
+      const [, id, title, text] = args;
+      await ops([{ op: 'panel', id, title, text, value, label, image, span: span ? +span : undefined, h: h ? +h : undefined, by: BY }]);
+    } else {
+      const ov = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc.live || {};
+      const slots = (ov.slots || []).filter((x) => x.id !== args[0]);
+      if (args[1] !== 'rm') slots.push({ id: args[0], span: span ? +span : 1, h: h ? +h : 180, ...(image ? { image } : {}) });
+      await ops([{ op: 'liveLayout', slots }]);
+    }
+    break;
+  }
+  case 'present': {
+    if (args[0] === 'off') { await call('POST', '/api/present', { off: true, doc: DOC || undefined }); out('ok'); break; }
+    const combined = args.includes('--combined');
+    const [sheet, focus] = args.filter((a) => a !== '--combined');
+    await call('POST', '/api/present', { doc: DOC || undefined, sheet, focus, mode: combined ? 'auto' : undefined, by: BY });
+    out('ok');
+    break;
+  }
   case 'find': out(await call('GET', '/api/find?' + qs({ doc: DOC, q: args.join(' ') }))); break;
   case 'commit': out(await call('POST', '/api/commit', { message: args.join(' '), by: BY })); break;
   case 'commits': out(await call('GET', '/api/commits')); break;

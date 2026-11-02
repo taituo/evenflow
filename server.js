@@ -171,6 +171,21 @@ export function createServer(store) {
       store.selection = { doc: b.doc, sheet: b.sheet, ranges: b.ranges || [], active: b.active, ts: Date.now() };
       send(res, 200, { ok: true });
     },
+    'POST /api/present': async (req, res) => {
+      const b = await body(req);
+      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off });
+      send(res, 200, { ok: true });
+    },
+    'POST /api/live-state': async (req, res) => { store.live = await body(req); store.live.ts = Date.now(); send(res, 200, { ok: true }); },
+    'GET /api/live': (req, res, u) => {
+      const L = store.live;
+      if (u.searchParams.get('format') === 'json') return send(res, 200, L || { open: false });
+      if (!L || !L.open) return send(res, 200, 'Live mode is not open on the user\'s screen');
+      const lines = [`Live open · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
+      for (const c of L.cards || []) lines.push(`  ${c.visible ? '●' : '○'} ${c.key}  ${c.kind}${c.title ? ` "${c.title}"` : ''}  @${c.x},${c.y} ${c.w}×${c.h}${c.summary ? '  ' + c.summary : ''}`);
+      lines.push('(● = on screen now; positions in CSS px of the live canvas)');
+      send(res, 200, lines.join('\n'));
+    },
     'POST /api/focus': async (req, res) => {
       const b = await body(req);
       store.emit({ type: 'focus', by: b.by || 'agent', doc: b.doc || store.state.order[0], sheet: b.sheet, range: b.range, label: b.label });

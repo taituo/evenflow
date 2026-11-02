@@ -5,6 +5,7 @@ import { shiftFormula, refSpans, autoClose, literal, isErr, refBox } from '../..
 import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES } from '../../shared/types/sheet.js';
 import { drawChart } from './charts.js';
 import { openLive } from './live.js';
+import { FONTS, fontStack } from '../../shared/fonts.js';
 import { sheetBlocks, toMarkdown, toHtml } from '../../shared/export.js';
 
 const DEF_W = 100, DEF_H = 21, HDR_W = 46, HDR_H = 24, FONT = 13;
@@ -246,7 +247,7 @@ export function mount(root, ctx) {
     const t = fmtValue(v);
     if (!t) return;
     const fsz = (st.fs || FONT) * z;
-    const font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${fsz}px Arial, Helvetica, sans-serif`;
+    const font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${fsz}px ${fontStack(st.ff)}`;
     if (font !== k.font) { g.font = font; k.font = font; }
     const err = isErr(v);
     const align = st.align || (typeof v === 'number' ? 'right' : typeof v === 'boolean' || err ? 'center' : 'left');
@@ -335,7 +336,7 @@ export function mount(root, ctx) {
     const cell = s.cells[addr(c, r)];
     if (!cell || cell.v === '') return 1;
     const st = cell.s || {};
-    g.font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${st.fs || FONT}px Arial, Helvetica, sans-serif`;
+    g.font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${st.fs || FONT}px ${fontStack(st.ff)}`;
     return wrapLines(fmtValue(engine.value(s, c, r)), cw(c) - 6, !!st.wrap).length * ((st.fs || FONT) / FONT);
   }
 
@@ -590,8 +591,9 @@ export function mount(root, ctx) {
     const EM = mergeR(edit.c, edit.r);
     const er = EM ? rectOf(EM) : null;
     const x = sx(edit.c), y = sy(edit.r), w = er ? er.w : cw(edit.c) * z, h = er ? er.h : rh(edit.r) * z;
-    const efs = (sh().cells[addr(edit.c, edit.r)]?.s?.fs || FONT) * z;
-    const font = `${efs}px Arial, Helvetica, sans-serif`;
+    const est = sh().cells[addr(edit.c, edit.r)]?.s || {};
+    const efs = (est.fs || FONT) * z;
+    const font = `${efs}px ${fontStack(est.ff)}`;
     g.font = font;
     const lines = ed.value.split('\n');
     const tw = Math.max(...lines.map((l) => g.measureText(l + 'MM').width));
@@ -819,9 +821,11 @@ export function mount(root, ctx) {
   function redo() { const ops = redoStack.pop(); if (!ops) return; const inv = ctx.submit(ops); if (inv) undoStack.push(inv); refresh(); }
 
   let live = null;
-  function startLive() {
+  function startLive(opts = {}) {
     if (edit) commitEdit();
-    live = openLive(ctx, doc, sh().name, {
+    if (live) return live.present(opts);
+    live = openLive(ctx, doc, opts.sheet && doc.sheets.some((x) => sameName(x.name, opts.sheet)) ? doc.sheets.find((x) => sameName(x.name, opts.sheet)).name : sh().name, {
+      ...opts,
       submit: (ops) => submit(ops),
       onClose: (name) => { live = null; if (!sameName(name, sheetName)) switchSheet(name); ed.focus(); requestDraw(); },
     });
@@ -1007,7 +1011,7 @@ export function mount(root, ctx) {
       const p = parseAddr(A);
       if (p.c !== c) continue;
       const st = s.cells[A].s || {};
-      g.font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${FONT}px Arial, Helvetica, sans-serif`;
+      g.font = `${st.i ? 'italic ' : ''}${st.b ? 'bold ' : ''}${st.fs || FONT}px ${fontStack(st.ff)}`;
       w = Math.max(w, g.measureText(fmtValue(engine.value(s, p.c, p.r))).width + 12);
     }
     submit([{ op: 'resize', sheet: s.name, cols: { [colToName(c)]: Math.ceil(Math.min(w, 600)) } }]);
@@ -1097,9 +1101,9 @@ export function mount(root, ctx) {
   }
   async function exportToNotes(name) {
     const md = toMarkdown(sheetBlocks(doc, name));
-    const r = await ctx.post('/api/docs', { type: 'text', title: `${name} – raportti`, by: 'user' });
+    const r = await ctx.post('/api/docs', { type: 'text', title: `${name} – report`, by: 'user' });
     await ctx.post('/api/ops', { doc: r.id, by: 'user', ops: [{ op: 'setText', text: md }] });
-    ctx.toast(`Document "${name} – raportti" created`);
+    ctx.toast(`Document "${name} – report" created`);
     location.hash = r.id;
   }
   $('.sv-addsheet').onmousedown = (e) => e.preventDefault();
@@ -1117,6 +1121,7 @@ export function mount(root, ctx) {
     <button class="tb" data-a="redo" title="Redo (Ctrl+Y)">↷</button>
     <select class="tb" data-a="zoom" title="Zoom (Ctrl+wheel / pinch)">${[50, 75, 90, 100, 125, 150, 200, 300].map((p) => `<option value="${p}">${p}%</option>`).join('')}</select>
     <div class="sep"></div>
+    <select class="tb" data-a="ff" title="Font">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join('')}</select>
     <select class="tb" data-a="fs" title="Font size">${[9, 10, 11, 13, 16, 20, 24, 32, 40, 56, 72].map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
     <button class="tb" data-a="b" title="Bold (Ctrl+B)"><b>B</b></button>
     <button class="tb" data-a="i" title="Italic (Ctrl+I)"><i>I</i></button>
@@ -1143,6 +1148,9 @@ export function mount(root, ctx) {
   const zoomSel = tb.querySelector('[data-a=zoom]');
   zoomSel.value = '100';
   zoomSel.onchange = () => { setZoom(+zoomSel.value / 100); ed.focus(); };
+  const ffSel = tb.querySelector('[data-a=ff]');
+  ffSel.value = 'sans';
+  ffSel.onchange = () => { toggleStyle('ff', ffSel.value === 'sans' ? null : ffSel.value); ed.focus(); };
   const fsSel = tb.querySelector('[data-a=fs]');
   fsSel.value = String(FONT);
   fsSel.onchange = () => { setFontSize(+fsSel.value); ed.focus(); };
@@ -1276,6 +1284,8 @@ export function mount(root, ctx) {
     tb.querySelector('[data-a=grid]').classList.toggle('on', sh().view?.grid === false);
     const fsSel2 = tb.querySelector('[data-a=fs]');
     if (fsSel2 && document.activeElement !== fsSel2) fsSel2.value = String(st.fs || FONT);
+    const ffSel2 = tb.querySelector('[data-a=ff]');
+    if (ffSel2 && document.activeElement !== ffSel2) ffSel2.value = st.ff && FONTS[st.ff] ? st.ff : 'sans';
   }
 
   function setZoom(nz, ax = hw() + 1, ay = hh() + 1) {
@@ -1695,7 +1705,7 @@ export function mount(root, ctx) {
     const tab = tableAt(doc, sh().name, sel.active.c, sel.active.r);
     const tableItems = tab ? [
       { label: `▦ ${tab.t.name}: add row`, action: () => { submit([{ op: 'appendRows', table: tab.t.name, rows: [[]] }]); setActive({ c: tab.R.c1, r: tab.R.r2 + 1 }); ensureVisible(tab.R.c1, tab.R.r2 + 1); } },
-      { label: `▦ ${tab.t.name}: add column…`, action: () => askName(e, 'Column name', 'Uusi', (n) => submit([{ op: 'addColumn', table: tab.t.name, name: n }])) },
+      { label: `▦ ${tab.t.name}: add column…`, action: () => askName(e, 'Column name', 'New', (n) => submit([{ op: 'addColumn', table: tab.t.name, name: n }])) },
       { label: `▦ ${tab.t.name}: rename table…`, action: () => askName(e, 'Table name', tab.t.name, (n) => submit([{ op: 'renameTable', name: tab.t.name, newName: n }])) },
       { label: `▦ ${tab.t.name}: delete record${nR > 1 ? 's' : ''}`, disabled: R.r1 <= tab.R.r1, action: () => submit([{ op: 'removeRows', table: tab.t.name, rows: Array.from({ length: nR }, (_, i) => R.r1 + i - tab.R.r1) }]) },
       { label: `▦ ${tab.t.name}: remove table (keep data)`, action: () => submit([{ op: 'deleteTable', name: tab.t.name }]) },
@@ -1759,8 +1769,8 @@ export function mount(root, ctx) {
     if (R.c1 === R.c2 && R.r1 === R.r2) R = region(R.c1, R.r1);
     if (R.r1 === R.r2) R = { ...R, r2: R.r1 + 1 };
     let n = 1;
-    while (allTables(doc).some((x) => sameName(x.t.name, 'Taulukko' + n))) n++;
-    askName(anchor, 'Table name', 'Taulukko' + n, (name) => {
+    while (allTables(doc).some((x) => sameName(x.t.name, 'Table' + n))) n++;
+    askName(anchor, 'Table name', 'Table' + n, (name) => {
       if (submit([{ op: 'table', name, range: quoteSheet(sh().name) + '!' + rangeToString(R) }])) {
         sel = { ranges: [R], active: { c: R.c1, r: R.r1 }, anchor: { c: R.c1, r: R.r1 }, cursor: { c: R.c2, r: R.r2 } };
         afterSelect();
@@ -1806,6 +1816,7 @@ export function mount(root, ctx) {
     unmount() { live?.close(); ro.disconnect(); document.removeEventListener('keydown', docKey, true); ctx.toolbar.innerHTML = ''; },
     reload() { undoStack = []; redoStack = []; refresh(); },
     resized: () => setTimeout(resize, 0),
+    present(o) { if (o.off) return live?.close(); startLive(o); },
     activeRef: () => `${quoteSheet(sh().name)}!${addr(sel.active.c, sel.active.r)}`,
     remote(evt) {
       live?.update();

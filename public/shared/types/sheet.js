@@ -82,6 +82,9 @@ export function apply(st, op) {
     case 'setTables': return opSetTables(st, op);
     case 'borders': return opBorders(st, op);
     case 'view': return opView(st, op);
+    case 'liveLayout': return opLiveLayout(st, op);
+    case 'panel': return opPanel(st, op);
+    case 'removePanel': return opRemovePanel(st, op);
     case 'addChart': return opAddChart(st, op);
     case 'updateChart': return opUpdateChart(st, op);
     case 'deleteChart': return opDeleteChart(st, op);
@@ -130,7 +133,7 @@ function opSet(st, op) {
   return { inverse: Object.entries(inv).map(([sheet, cells]) => ({ op: 'set', sheet, cells })), changes };
 }
 
-const STYLE_KEYS = ['b', 'i', 'u', 's', 'fill', 'color', 'align', 'wrap', 'fs', 'valign'];
+const STYLE_KEYS = ['b', 'i', 'u', 's', 'fill', 'color', 'align', 'wrap', 'fs', 'valign', 'ff'];
 /** format: { sheet?, range | ranges: [...], style: { b:true, fill:"#fff2cc", align:"center", color:null } } */
 function opFormat(st, op) {
   const ranges = op.ranges || [op.range];
@@ -593,10 +596,11 @@ function opView(st, op) {
   const v = { ...(sh.view || {}) };
   if ('grid' in op) { if (op.grid === false) v.grid = false; else delete v.grid; }
   if ('theme' in op) { if (op.theme) v.theme = String(op.theme); else delete v.theme; }
+  if ('font' in op) { if (op.font) v.font = String(op.font); else delete v.font; }
   if (Object.keys(v).length) sh.view = v; else delete sh.view;
   return {
-    inverse: [{ op: 'view', sheet: sh.name, grid: old.grid !== false, theme: old.theme || null }],
-    changes: [{ k: 'layout', sheet: sh.name, what: 'theme' in op ? `live theme ${v.theme || 'default'}` : `gridlines ${v.grid === false ? 'hidden' : 'shown'}` }],
+    inverse: [{ op: 'view', sheet: sh.name, grid: old.grid !== false, theme: old.theme || null, font: old.font || null }],
+    changes: [{ k: 'layout', sheet: sh.name, what: 'theme' in op ? `live theme ${v.theme || 'default'}` : 'font' in op ? `live font ${v.font || 'default'}` : `gridlines ${v.grid === false ? 'hidden' : 'shown'}` }],
   };
 }
 
@@ -683,6 +687,43 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
   const series = [];
   for (let j = first; j < (body[0] || []).length; j++) series.push({ name: hasHeader ? fmtValue(header[j]) : `Series ${series.length + 1}`, values: body.map((r) => num(r[j])) });
   return { labels, series };
+}
+
+// ------------------------------------------------------------------ live (combined) layout — workbook level
+// st.live = { order:[key], spans:{key:{span,h}}, hidden:[key], flow:'vertical'|'horizontal', reveal:bool,
+//             slots:[{id, span, h, image?}], panels:[{id, title, text, value, label, image, span, h, by}] }
+const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels'];
+function setLive(st, patch) {
+  const old = {};
+  const L = { ...(st.live || {}) };
+  for (const k of LIVE_KEYS) {
+    if (!(k in patch)) continue;
+    old[k] = L[k] === undefined ? null : clone(L[k]);
+    if (patch[k] == null) delete L[k]; else L[k] = clone(patch[k]);
+  }
+  if (Object.keys(L).length) st.live = L; else delete st.live;
+  return { op: 'liveLayout', ...old };
+}
+function opLiveLayout(st, op) {
+  const inv = setLive(st, op);
+  return { inverse: [inv], changes: [{ k: 'layout', sheet: '(live)', what: 'live layout: ' + LIVE_KEYS.filter((k) => k in op).join(', ') }] };
+}
+/** panel: { id, title?, text?, value?, label?, image?, span?, h? } — a card the agent drops into Live on the fly (upsert). */
+function opPanel(st, op) {
+  if (!op.id) fail('panel needs id');
+  const panels = clone(st.live?.panels || []);
+  const i = panels.findIndex((p) => p.id === op.id);
+  const p = { ...(i >= 0 ? panels[i] : {}), id: String(op.id) };
+  for (const k of ['title', 'text', 'value', 'label', 'image', 'span', 'h', 'by']) if (k in op) { if (op[k] == null) delete p[k]; else p[k] = op[k]; }
+  if (i >= 0) panels[i] = p; else panels.push(p);
+  const inv = setLive(st, { panels });
+  return { inverse: [inv], changes: [{ k: 'panel', action: i >= 0 ? 'update' : 'add', id: p.id, title: p.title || '' }] };
+}
+function opRemovePanel(st, op) {
+  const panels = (st.live?.panels || []).filter((p) => p.id !== op.id);
+  if (panels.length === (st.live?.panels || []).length) return { inverse: [], changes: [] };
+  const inv = setLive(st, { panels: panels.length ? panels : null });
+  return { inverse: [inv], changes: [{ k: 'panel', action: 'remove', id: op.id }] };
 }
 
 export function mergeAt(sh, c, r) {
@@ -928,7 +969,7 @@ function opAddColumn(st, op) {
   return chain(st, steps);
 }
 
-/** Human/agent label for a cell inside a table: Tehtävät[Servot].Tila */
+/** Human/agent label for a cell inside a table: Tasks[Wire the servos].Status */
 export function tableLabel(st, sheetName, A) {
   const p = parseAddr(A);
   const x = p && tableAt(st, sheetName, p.c, p.r);

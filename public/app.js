@@ -198,6 +198,11 @@ function connect() {
     }
     if (e.type === 'commit') { S.commits.push(e.commit); if (!$('#drawer').hidden && drawerMode === 'history') renderDrawer(); toast(`Milestone ${e.commit.id}: ${e.commit.message}`); return; }
     if (e.type === 'focus') { if (e.doc === S.docId) S.view?.focus?.(e); return; }
+    if (e.type === 'present') {
+      const go = () => S.view?.present?.(e);
+      if (e.doc && e.doc !== S.docId) openDoc(e.doc).then(go); else go();
+      return;
+    }
     if (e.type !== 'batch') return;
     S.version = Math.max(S.version, e.v);
     renderVer();
@@ -258,7 +263,7 @@ function toggleDrawer(mode) {
 $('#btnHistory').onclick = () => toggleDrawer('history');
 $('#btnSql').onclick = () => toggleDrawer('sql');
 
-let lastSql = 'SELECT * FROM Tehtävät';
+let lastSql = 'SELECT * FROM Tasks';
 let lastResult = null;
 function renderSql() {
   const d = $('#drawer');
@@ -286,7 +291,7 @@ function renderSql() {
     const at = S.view?.activeRef?.();
     if (!at) return;
     popover(into, (p, close) => {
-      const i = document.createElement('input'); i.placeholder = 'Table name'; i.value = 'Tulos';
+      const i = document.createElement('input'); i.placeholder = 'Table name'; i.value = 'Result';
       const ok = document.createElement('button'); ok.className = 'btn'; ok.textContent = 'Save';
       const go = () => { close(); exec({ into: { name: i.value, at } }); };
       ok.onclick = go; i.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
@@ -376,5 +381,8 @@ async function showDiff(c) {
   const want = location.hash.slice(1);
   await openDoc(S.docs.find((d) => d.id === want) ? want : S.docs[0].id);
   connect();
+  // deep link straight into Live / Focus: ?live=Dashboard&mode=auto&focus=chart:status&kiosk=1
+  const q = new URLSearchParams(location.search);
+  if (q.has('live')) S.view?.present?.({ sheet: q.get('live'), mode: q.get('mode') || undefined, focus: q.get('focus') || undefined, kiosk: q.has('kiosk') });
   addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== S.docId && S.docs.find((d) => d.id === id)) openDoc(id); });
 })();

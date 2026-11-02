@@ -95,9 +95,9 @@ test('rename sheet rewrites refs; delete sheet -> #REF!', () => {
   const st = wb();
   S.apply(st, { op: 'addSheet', name: 'Data' });
   S.apply(st, { op: 'set', cells: { 'Data!A1': '7', A1: '=Data!A1' } });
-  S.apply(st, { op: 'renameSheet', sheet: 'Data', name: 'Luvut' });
-  assert.equal(st.sheets[0].cells.A1.v, '=Luvut!A1');
-  S.apply(st, { op: 'deleteSheet', sheet: 'Luvut' });
+  S.apply(st, { op: 'renameSheet', sheet: 'Data', name: 'Numbers' });
+  assert.equal(st.sheets[0].cells.A1.v, '=Numbers!A1');
+  S.apply(st, { op: 'deleteSheet', sheet: 'Numbers' });
   assert.equal(st.sheets[0].cells.A1.v, '=#REF!');
 });
 
@@ -146,7 +146,7 @@ test('fuzz: every op followed by its inverse restores the workbook exactly', () 
       () => ({ op: 'insertCols', at: L[rnd(8)], count: 1 + rnd(2) }),
       () => ({ op: 'deleteCols', at: L[rnd(8)], count: 1 + rnd(2) }),
       () => ({ op: 'deleteSheet', sheet: 'Two' }),
-      () => ({ op: 'renameSheet', sheet: 'Two', name: 'Kaksi' }),
+      () => ({ op: 'renameSheet', sheet: 'Two', name: 'Deux' }),
       () => ({ op: 'appendRows', table: 'T1', rows: [['a', 'b'], { A: 1 }] }),
       () => ({ op: 'removeRows', table: 'T1', rows: [1, 2] }),
       () => ({ op: 'addColumn', table: 'T1', name: 'Uusi' }),
@@ -187,40 +187,40 @@ test('whole column / row references', () => {
 
 test('named tables: records, structured refs, follow structure', () => {
   const st = wb();
-  S.apply(st, { op: 'set', range: 'B4', values: [['Nimi', 'Tila', 'Vastuu'], ['Servot', 'auki', 'Isi'], ['Akku', 'valmis', 'Poika']] });
-  S.apply(st, { op: 'set', range: 'G4', values: [['Osa', 'Hinta'], ['Servo', 12]] });
-  S.apply(st, { op: 'table', name: 'Tehtävät', range: 'B4:D6' });
-  S.apply(st, { op: 'table', name: 'Osat', range: 'G4:H5' });
+  S.apply(st, { op: 'set', range: 'B4', values: [['Name', 'Status', 'Owner'], ['Servos', 'open', 'Alex'], ['Battery', 'done', 'Sam']] });
+  S.apply(st, { op: 'set', range: 'G4', values: [['Part', 'Price'], ['Servo', 12]] });
+  S.apply(st, { op: 'table', name: 'Tasks', range: 'B4:D6' });
+  S.apply(st, { op: 'table', name: 'Parts', range: 'G4:H5' });
   assert.throws(() => S.apply(st, { op: 'table', name: 'X', range: 'C5:H9' }), /Overlaps/);
-  S.apply(st, { op: 'set', cells: { A1: '=COUNTIF(Tehtävät[Tila],"auki")', A2: '=SUM(Osat[Hinta])' } });
+  S.apply(st, { op: 'set', cells: { A1: '=COUNTIF(Tasks[Status],"open")', A2: '=SUM(Parts[Price])' } });
   assert.equal(val(st, 'Sheet1', 'A1'), '1');
-  let r = S.apply(st, { op: 'appendRows', table: 'Tehtävät', rows: [{ Nimi: 'Johdot', Tila: 'auki' }] });
+  let r = S.apply(st, { op: 'appendRows', table: 'Tasks', rows: [{ Name: 'Wires', Status: 'open' }] });
   assert.equal(st.sheets[0].tables[0].range, 'B4:D7');
-  assert.equal(st.sheets[0].cells.C7.v, 'auki');
+  assert.equal(st.sheets[0].cells.C7.v, 'open');
   assert.equal(val(st, 'Sheet1', 'A1'), '2');
-  S.apply(st, { op: 'updateRows', table: 'Tehtävät', key: 'servot', set: { Tila: 'valmis' } });
-  assert.equal(st.sheets[0].cells.C5.v, 'valmis');
-  assert.equal(S.tableLabel(st, 'Sheet1', 'C5'), 'Tehtävät[Servot].Tila');
-  S.apply(st, { op: 'addColumn', table: 'Tehtävät', name: 'Huom' });
+  S.apply(st, { op: 'updateRows', table: 'Tasks', key: 'servos', set: { Status: 'done' } });
+  assert.equal(st.sheets[0].cells.C5.v, 'done');
+  assert.equal(S.tableLabel(st, 'Sheet1', 'C5'), 'Tasks[Servos].Status');
+  S.apply(st, { op: 'addColumn', table: 'Tasks', name: 'Notes' });
   assert.equal(st.sheets[0].tables[0].range, 'B4:E7');
-  // G column was free? Osat starts at G, E free -> no insert
+  // G column was free? Parts starts at G, E free -> no insert
   assert.equal(st.sheets[0].tables[1].range, 'G4:H5');
   S.apply(st, { op: 'insertRows', at: 1, count: 2 });
   assert.equal(st.sheets[0].tables[0].range, 'B6:E9');
   S.apply(st, { op: 'move', from: 'B6:E9', to: 'B20' });
-  assert.equal(st.sheets[0].tables.find((t) => t.name === 'Tehtävät').range, 'B20:E23');
-  r = S.apply(st, { op: 'removeRows', table: 'Tehtävät', match: { Tila: 'valmis' } });
-  assert.equal(st.sheets[0].tables.find((t) => t.name === 'Tehtävät').range, 'B20:E21');
-  assert.equal(st.sheets[0].cells.B21.v, 'Johdot');
-  const rt = S.read(st, '@Tehtävät');
-  assert.deepEqual(rt.columns, ['Nimi', 'Tila', 'Vastuu', 'Huom']);
-  S.apply(st, { op: 'renameTable', name: 'Tehtävät', newName: 'Tasks' });
-  assert.equal(st.sheets[0].cells.A3.v, '=COUNTIF(Tasks[Tila],"auki")');
+  assert.equal(st.sheets[0].tables.find((t) => t.name === 'Tasks').range, 'B20:E23');
+  r = S.apply(st, { op: 'removeRows', table: 'Tasks', match: { Status: 'done' } });
+  assert.equal(st.sheets[0].tables.find((t) => t.name === 'Tasks').range, 'B20:E21');
+  assert.equal(st.sheets[0].cells.B21.v, 'Wires');
+  const rt = S.read(st, '@Tasks');
+  assert.deepEqual(rt.columns, ['Name', 'Status', 'Owner', 'Notes']);
+  S.apply(st, { op: 'renameTable', name: 'Tasks', newName: 'Tasks' });
+  assert.equal(st.sheets[0].cells.A3.v, '=COUNTIF(Tasks[Status],"open")');
 });
 
 test('borders and merges (Sheets semantics)', () => {
   const st = wb();
-  S.apply(st, { op: 'set', cells: { A1: 'Otsikko', B1: 'x', A2: '1' } });
+  S.apply(st, { op: 'set', cells: { A1: 'Title', B1: 'x', A2: '1' } });
   let r = S.apply(st, { op: 'merge', range: 'A1:C1' });
   assert.deepEqual(st.sheets[0].merges, ['A1:C1']);
   assert.equal(st.sheets[0].cells.B1, undefined);
@@ -243,25 +243,25 @@ test('borders and merges (Sheets semantics)', () => {
 
 test('charts: live data from range/table, follow structure, exact undo', () => {
   const st = wb();
-  S.apply(st, { op: 'set', range: 'B2', values: [['Kk', 'Tulot', 'Menot'], ['Tam', 10, 4], ['Hel', 12, 5], ['Maa', 9, 7]] });
-  S.apply(st, { op: 'table', name: 'Talous', range: 'B2:D5' });
-  S.apply(st, { op: 'addChart', type: 'column', range: 'B2:D5', at: 'G2', title: 'Talous' });
-  S.apply(st, { op: 'addChart', type: 'pie', table: 'Talous', x: 'Kk', y: ['Tulot'], at: 'G20' });
-  S.apply(st, { op: 'set', cells: { F1: '=SUM(Talous[Tulot])' } });
-  S.apply(st, { op: 'addChart', type: 'kpi', value: 'F1', title: 'Tulot yht.', at: 'M2' });
+  S.apply(st, { op: 'set', range: 'B2', values: [['Month', 'Income', 'Costs'], ['Jan', 10, 4], ['Feb', 12, 5], ['Mar', 9, 7]] });
+  S.apply(st, { op: 'table', name: 'Money', range: 'B2:D5' });
+  S.apply(st, { op: 'addChart', type: 'column', range: 'B2:D5', at: 'G2', title: 'Money' });
+  S.apply(st, { op: 'addChart', type: 'pie', table: 'Money', x: 'Month', y: ['Income'], at: 'G20' });
+  S.apply(st, { op: 'set', cells: { F1: '=SUM(Money[Income])' } });
+  S.apply(st, { op: 'addChart', type: 'kpi', value: 'F1', title: 'Income yht.', at: 'M2' });
   let d = S.chartData(st, 'Sheet1', st.sheets[0].charts[0]);
-  assert.deepEqual(d.labels, ['Tam', 'Hel', 'Maa']);
-  assert.deepEqual(d.series.map((s) => s.name), ['Tulot', 'Menot']);
+  assert.deepEqual(d.labels, ['Jan', 'Feb', 'Mar']);
+  assert.deepEqual(d.series.map((s) => s.name), ['Income', 'Costs']);
   assert.deepEqual(S.chartData(st, 'Sheet1', st.sheets[0].charts[1]).series[0].values, [10, 12, 9]);
   assert.equal(S.chartData(st, 'Sheet1', st.sheets[0].charts[2]).kpi.text, '31');
   S.apply(st, { op: 'insertRows', at: 1, count: 2 });
   assert.equal(st.sheets[0].charts[0].range, 'B4:D7');
   assert.equal(st.sheets[0].charts[0].at, 'G4');
   assert.equal(st.sheets[0].charts[2].value, 'F3');
-  S.apply(st, { op: 'renameTable', name: 'Talous', newName: 'Raha' });
-  assert.equal(st.sheets[0].charts[1].table, 'Raha');
-  const r = S.apply(st, { op: 'updateChart', id: 'chart1', type: 'line', range: '@Raha' });
-  assert.equal(st.sheets[0].charts[0].table, 'Raha');
+  S.apply(st, { op: 'renameTable', name: 'Money', newName: 'Cash' });
+  assert.equal(st.sheets[0].charts[1].table, 'Cash');
+  const r = S.apply(st, { op: 'updateChart', id: 'chart1', type: 'line', range: '@Cash' });
+  assert.equal(st.sheets[0].charts[0].table, 'Cash');
   for (const o of r.inverse) S.apply(st, o);
   assert.equal(st.sheets[0].charts[0].range, 'B4:D7');
   assert.equal(st.sheets[0].charts[0].table, undefined);

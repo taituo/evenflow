@@ -16,16 +16,16 @@ const post = (p, b) => fetch(base + p, { method: 'POST', headers: { 'content-typ
 test.after(() => srv.close());
 
 test('ops -> changes (text) with recalc, own edits excluded', async () => {
-  await post('/api/ops', { by: 'user', ops: [{ op: 'set', sheet: 'Budjetti', cells: { B2: '10' } }] });
-  await post('/api/ops', { by: 'agent', ops: [{ op: 'set', sheet: 'Budjetti', cells: { G1: 'x' } }] });
+  await post('/api/ops', { by: 'user', ops: [{ op: 'set', sheet: 'Budget', cells: { B2: '10' } }] });
+  await post('/api/ops', { by: 'agent', ops: [{ op: 'set', sheet: 'Budget', cells: { G1: 'x' } }] });
   const t = await get('/api/changes?since=0&exclude=agent');
-  assert.match(t, /Budjetti!B2: 4 → 10/);
-  assert.match(t, /calc: .*Budjetti!D2 50→125/);
+  assert.match(t, /Budget!B2: 4 → 10/);
+  assert.match(t, /calc: .*Budget!D2 50→125/);
   assert.doesNotMatch(t, /G1/);
 });
 
 test('expect -> 409 on conflict, batch is atomic', async () => {
-  const r = await post('/api/ops', { expect: { 'Budjetti!B2': '4' }, ops: [{ op: 'set', sheet: 'Budjetti', cells: { B2: '5' } }] });
+  const r = await post('/api/ops', { expect: { 'Budget!B2': '4' }, ops: [{ op: 'set', sheet: 'Budget', cells: { B2: '5' } }] });
   assert.equal(r.status, 409);
   const bad = await post('/api/ops', { ops: [{ op: 'set', cells: { Z1: 'a' } }, { op: 'move', from: 'nope', to: 'A1' }] });
   assert.equal(bad.status, 400);
@@ -34,36 +34,36 @@ test('expect -> 409 on conflict, batch is atomic', async () => {
 
 test('move is reported compactly and diff vs milestone is move-aware', async () => {
   await (await post('/api/commit', { message: 'base' })).json();
-  await post('/api/ops', { by: 'user', ops: [{ op: 'move', sheet: 'Budjetti', from: 'A2:E5', to: 'A20' }] });
-  await post('/api/ops', { by: 'user', ops: [{ op: 'set', sheet: 'Budjetti', cells: { B20: '7' } }] });
+  await post('/api/ops', { by: 'user', ops: [{ op: 'move', sheet: 'Budget', from: 'A2:E5', to: 'A20' }] });
+  await post('/api/ops', { by: 'user', ops: [{ op: 'set', sheet: 'Budget', cells: { B20: '7' } }] });
   const ch = await get('/api/changes?since=0&mode=net');
-  assert.match(ch, /MOVE Budjetti!A2:E5 → A20:E23/);
+  assert.match(ch, /MOVE Budget!A2:E5 → A20:E23/);
   const d = await get('/api/diff?from=last');
-  assert.match(d, /Budjetti!B20: 10 → 7/);
-  assert.doesNotMatch(d, /A2: Servot → ∅/);
+  assert.match(d, /Budget!B20: 10 → 7/);
+  assert.doesNotMatch(d, /A2: Servos → ∅/);
 });
 
 test('restore milestone', async () => {
   const r = await (await post('/api/restore', { commit: 'last' })).json();
   assert.ok(r.version > 0);
-  assert.match(await get('/api/read?range=Budjetti!B2'), /B2 10/);
+  assert.match(await get('/api/read?range=Budget!B2'), /B2 10/);
 });
 
 test('selection + read + find', async () => {
-  await post('/api/selection', { doc: 'main', sheet: 'Budjetti', ranges: ['C23:D32'], active: 'C23' });
-  assert.match(await get('/api/selection'), /Budjetti!C23:D32 active C23/);
-  assert.match(await get('/api/find?q=raspberry'), /Budjetti!A3 Raspberry Pi/);
-  assert.match(await get('/api/overview'), /Budjetti: used/);
+  await post('/api/selection', { doc: 'main', sheet: 'Budget', ranges: ['C23:D32'], active: 'C23' });
+  assert.match(await get('/api/selection'), /Budget!C23:D32 active C23/);
+  assert.match(await get('/api/find?q=raspberry'), /Budget!A3 Raspberry Pi/);
+  assert.match(await get('/api/overview'), /Budget: used/);
 });
 
 test('tables over HTTP', async () => {
-  await post('/api/ops', { by: 'user', ops: [{ op: 'updateRows', table: 'Tehtävät', key: 'Kytke servot', set: { Tila: 'valmis' } }] });
-  assert.match(await get('/api/changes?since=0'), /⟨Tehtävät\[Kytke servot\]\.Tila⟩/);
-  assert.match(await get('/api/read?range=@Tehtävät'), /Tehtävä: Kytke servot · Tila: valmis/);
-  assert.match(await get('/api/overview'), /table Tehtävät B6:E10/);
+  await post('/api/ops', { by: 'user', ops: [{ op: 'updateRows', table: 'Tasks', key: 'Wire the servos', set: { Status: 'done' } }] });
+  assert.match(await get('/api/changes?since=0'), /⟨Tasks\[Wire the servos\]\.Status⟩/);
+  assert.match(await get('/api/read?range=@Tasks'), /Task: Wire the servos · Status: done/);
+  assert.match(await get('/api/overview'), /table Tasks B6:E10/);
 });
 
 test('text canvas', async () => {
-  await post('/api/ops', { doc: 'notes', ops: [{ op: 'append', text: 'hei agentilta' }] });
-  assert.match(await get('/api/read?doc=notes'), /hei agentilta/);
+  await post('/api/ops', { doc: 'notes', ops: [{ op: 'append', text: 'hello from the agent' }] });
+  assert.match(await get('/api/read?doc=notes'), /hello from the agent/);
 });

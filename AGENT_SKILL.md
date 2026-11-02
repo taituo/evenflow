@@ -1,155 +1,162 @@
 ---
 name: lotus-456
-description: Work with the user in their live Lotus 456 spreadsheet (A1 grid, formulas, multiple sheets, milestones). Use when the user refers to "the sheet", "taulukko", cell coordinates like C23, or asks you to read what they changed.
+description: Work with the user in their live Lotus 456 spreadsheet (A1 grid, formulas, named tables, SQL, charts, Live dashboards). Use when the user refers to "the sheet", a table by name, cell coordinates like C23, a dashboard, or asks what they changed.
 ---
 
 # Lotus 456 — agent skill
 
-A full-screen spreadsheet the user has open in a browser. You and the user edit the same workbook; every
-edit is versioned. Your job is to read **only what changed** and to write precise, minimal edits.
+The user has a full-screen spreadsheet open in a browser. You both edit the same workbook; every edit is versioned.
+Read **only what changed**, write **small, precise** edits, and prefer **named tables** over raw coordinates.
 
-Server: `$CANVAS_URL` (default `http://127.0.0.1:3210`). CLI: `bin/cm.mjs` (alias `cm`). All output is compact text.
+Server: `$CANVAS_URL` (default `http://127.0.0.1:3210`). CLI: `bin/cm.mjs` (alias `cm`). Output is compact text.
 
-## Loop
+## The loop
 
-1. First contact: `cm overview` — docs, sheets, used ranges, the user's current selection.
-2. Before every reply: `cm changes` — only edits since your last call (your own are filtered out; cursor kept in `~/.lotus456-cursor`).
-   Long gap? `cm changes --net` collapses to net per-cell effect.
-3. Read narrowly: `cm read Budjetti!A1:F20`. Never dump whole sheets "just in case".
-4. Write: `cm set …`, `cm table …`, `cm move …`. The response echoes what changed and which formulas recalculated.
+1. First contact: `cm overview` — workbooks, sheets, used ranges, named tables (with columns), charts, the user's selection.
+2. Before every reply: `cm changes` — only edits since your last call; your own are filtered out; the cursor is kept in
+   `~/.lotus456-cursor`. After a long gap use `cm changes --net` (net effect per cell).
+3. Read narrowly: `cm read @Tasks` (a table as records) or `cm read Budget!A1:E6`. Never dump whole sheets "just in case".
+4. Write. Every write echoes what changed and which formulas recalculated.
 
 ## Reading the change feed
 
 ```
 v14 user 14:02:11 [main]
-  Budjetti!B2: 4 → 10                                  # direct edit (old → new raw input)
-  calc: Budjetti!D2 50→125 · Budjetti!E6 ✓→✗           # formulas whose VALUE changed as a consequence
+  Project!C8: open → done   ⟨Tasks[Wire the servos].Status⟩     # direct edit, with its table/record/column
+  calc: Project!C12 3→2 · Dashboard!C28 3→2                     # formulas whose VALUE changed as a consequence
 v15 user 14:02:30 [main]
-  MOVE Budjetti!A2:E5 → A8:E11 (20 cells; refs updated in Budjetti!D6)
+  MOVE Budget!A2:E5 → A8:E11 (20 cells; refs updated in Budget!D6)
 ```
-- A MOVE is one line, not 40 cell edits. Data still exists — it is at the new address. Formulas that pointed
-  to it were rewritten automatically (Sheets cut/paste semantics). Don't "fix" them.
-- `INSERT rows 3` / `DELETE cols C:D` shift addresses below/right of the point. Re-resolve any addresses you remember.
-- `∅` = empty. `⇒` in `cm read` = computed value of a formula.
+- A MOVE is one line. The data now lives at the new address; formulas pointing at it were rewritten (Sheets
+  cut/paste semantics). Don't "fix" them.
+- `INSERT rows 3` / `DELETE cols C:D` shift addresses below / right. Re-resolve addresses you remember.
+- `∅` = empty. In `cm read`, `⇒` is a formula's computed value.
 
-## Writing
+## Named tables (prefer these)
+
+Tables are named rectangles anywhere in a sheet: first row = column names, the rest = records.
+```
+cm read @Tasks                                   # [7] Task: Build the chassis · Status: done · Owner: Sam
+cm add Tasks '{"Task":"Test the battery","Status":"open","Owner":"Sam"}'
+cm update Tasks 'Wire the servos' Status=done     # key = first-column value
+cm update Tasks 'Owner=Alex' Status=done          # or match on a column (all matches)
+cm rm Tasks 'Status=done'                         # removes records inside the table only
+cm addcol Tasks Priority
+cm mktable Ideas B16:C18                          # name an existing block (header row first)
+```
+Formulas: `=COUNTIF(Tasks[Status],"open")`, `=SUM(Parts[Price])`, `Tasks[#All]`.
+
+## Cells, ranges, structure
 
 ```
-cm set C1=Tila 'D5==B5*C5' 'Asetukset!B1=300'      # value or =formula; quote anything with ! or spaces
-cm table H1 '[["Kategoria","Summa"],["Servot","=SUMIF(A:A,\"Serv*\",D:D)"]]'
-cm move C23:D32 F23                                 # cut/paste, refs follow
-cm insert-rows 5 2 --sheet=Budjetti
-cm fmt A1:E1 '{"b":true,"fill":"#fff2cc"}'          # keys: b i u s fill color align(left|center|right)
+cm set C1=Status 'D5==B5*C5' 'Settings!B1=300'     # value or =formula; quote anything with ! or spaces
+cm table H1 '[["Category","Total"],["Servos","=SUM(D2:D3)"]]'
+cm move C23:D32 F23                                # cut/paste — references follow
+cm insert-rows 5 2 --sheet=Budget | cm delete-cols C 1
+cm fmt A1:E1 '{"b":true,"fill":"#fff2cc","fs":16,"ff":"serif"}'   # b i u s fill color align valign fs ff wrap
 cm border B6:E11 outer thick '#1a73e8'             # all|inner|horizontal|vertical|outer|left|top|right|bottom|clear
-cm merge B2:E2                                      # merge (keeps top-left value) · cm unmerge B2:E2
-cm note B7 "Is this the 2025 price?"                # ask the user something *in the cell*
-cm focus B2:B9 "checking quantities"                # purple box in the user's UI while you work
+cm merge B2:E2 | cm unmerge B2:E2
+cm note B7 "Is this the 2025 price?"               # ask the user something *in the cell*
+cm image B2 photo.png                              # =IMAGE("/assets/…")
+cm focus B2:B9 "checking quantities"               # purple box on the user's grid while you work
 ```
-Raw batch (atomic, all-or-nothing): `POST /api/ops {"by":"agent","ops":[…],"expect":{"Budjetti!B2":"10"}}`.
-Use `expect` when overwriting a cell the user may be touching — you get **409** with the current value instead of clobbering it.
-
-## Voice / coordinates
-
-The user may talk: *"laske C23 ja D32 yhteen"*. Coordinates are A1 style; sheet prefix optional (`Asetukset!B1`,
-quote names with spaces: `'My data'!A1`). If they don't say where the result goes, write to their **active cell**
-(`cm sel`) — or if it's not empty, the first empty cell below it — and say the address you used out loud.
-"Tämä / nämä / valitut" = `cm sel`.
-
-## Named tables (structured data)
-
-A sheet can hold many small named tables anywhere (title cells above, notes beside). First row = column
-headers, the rest = records. `cm overview` lists them with their columns. Prefer tables for anything
-record-like (tasks, parts, ideas, contacts) — you address data by **table + key + column**, not coordinates.
-
-```
-cm read @Tehtävät                     # [7] Tehtävä: Kokoa runko · Tila: valmis · Vastuu: Poika
-cm add Tehtävät '{"Tehtävä":"Testaa akku","Tila":"auki"}'     # appends, table grows (rows pushed down if needed)
-cm update Tehtävät 'Kytke servot' Tila=valmis                  # key = first-column value
-cm update Tehtävät 'Tila=auki' Vastuu=Isi                      # or match by column value (all matches)
-cm rm Tehtävät 'Tila=valmis'                                   # removes records inside the table only
-cm addcol Tehtävät Agentin_huomio                              # new column at the right edge
-cm mktable Ideat B16:C18                                       # name an existing region (header row first)
-```
-Change feed annotates table cells: `Projekti!C8: auki → valmis   ⟨Tehtävät[Kytke servot].Tila⟩`.
-Tables follow moves and row/column inserts. Formulas can use `Tehtävät[Tila]` (column) or `Tehtävät[#All]`:
-`=COUNTIF(Tehtävät[Tila],"auki")`. Cells are free text too — long notes are fine (`↵` wrap in the UI).
+Raw atomic batch: `POST /api/ops {"by":"agent","ops":[…],"expect":{"Budget!B2":"4"}}` — with `expect` you get **409** and
+the current value instead of overwriting something the user just changed.
 
 ## SQL (both directions) and JSON
 
-Every named table is a SQL table (Node's built-in SQLite, rebuilt per query). Other workbooks: `"doc.Table"`.
+Every named table is a SQL table (Node's built-in SQLite). Tables in other workbooks: `"doc.Table"`.
 ```
-cm sql "SELECT t.Vastuu, COUNT(*) n FROM Tehtävät t GROUP BY 1"
-cm sql "SELECT … FROM Tehtävät t JOIN Osat o ON …"
-cm sql --write "UPDATE Tehtävät SET Tila='valmis' WHERE Vastuu='Isi'"     # → updateRows/removeRows/appendRows, undoable
-cm sql --into Yhteenveto@Dashboard!B30 "SELECT Tila, COUNT(*) kpl FROM Tehtävät GROUP BY Tila"   # result → new table
-cm json Tehtävät                          # flat JSON array
-cm put Tehtävät rows.json [Sheet!B2]      # JSON array → table (creates at B2 if missing)
+cm sql "SELECT Owner, COUNT(*) n FROM Tasks WHERE Status='open' GROUP BY Owner"
+cm sql "SELECT t.Task, p.Price FROM Tasks t JOIN Parts p ON t.Notes LIKE '%' || p.Part || '%'"
+cm sql --write "UPDATE Tasks SET Status='done' WHERE Owner='Alex'"   # → table ops (versioned, undoable)
+cm sql --into Summary@Dashboard!B30 "SELECT Status, COUNT(*) n FROM Tasks GROUP BY Status"
+cm json Tasks | cm put Tasks rows.json [Sheet!B2]
 ```
 
-## Charts, dashboards, images, documents
+## Charts and documents
 
-Charts float over the grid, anchored to a cell, and read live data (range, named table or one cell for KPI).
 ```
-cm chart column B6:C10 --at K2 --title "Hinnat"       # column | bar | line | area | pie | kpi
-cm chart pie @TilaJakauma --title "Tila"               # table source (--x label col, --y value cols)
-cm chart kpi Projekti!C12 --title "Avoimia" --at B5
-cm chart-show status                                   # chart's current data as text
-cm chart-set status type=bar w=500                     # cm chart-rm id
-cm fmt B2 '{"fs":32,"b":true}'                         # font size in px; valign: top|middle
-cm ops '[{"op":"view","sheet":"Dashboard","grid":false}]'   # hide gridlines (dashboard look)
-cm ops '[{"op":"view","sheet":"Dashboard","theme":"ocean"}]' # Live-mode background: aurora|nebula|ocean|ember|forest|ink
-cm image B2 photo.png                                  # =IMAGE("url") — cells can hold pictures
-cm export Dashboard md                                 # sheet → document (headings, tables, charts, KPIs)
+cm chart column B6:C10 --at K2 --title "Prices"        # column | bar | line | area | pie | kpi
+cm chart pie @StatusMix --title "Task status"           # table source (--x label column, --y value columns)
+cm chart kpi Project!C12 --title "Open tasks" --at B5
+cm chart-show status | cm chart-set status type=bar w=500 | cm chart-rm status
+cm export Dashboard md                                   # sheet → document (headings, tables, charts, KPIs)
 ```
+
+## Live mode — the user's dashboard screen
+
+The user can turn any sheet into **Live**: a full-screen, real-time presentation over a shader background. Your writes
+animate there. Two layouts: **sheet** (the grid's own layout) and **combined** (every table, chart and KPI of the
+workbook, auto-composed, user-arrangeable).
+```
+cm live                                   # what the screen shows right now: cards, positions, what is visible
+cm present Dashboard --combined           # open Live on the user's screen
+cm present Dashboard chart:status         # focus one view full-screen (keys: chart:<id>, table:<name>, stat:<cell>)
+cm present off
+cm panel add brief "Agent summary" "**3 tasks open.**\n- Next: wire the servos" [--value 42 --label EUR --span 2]
+cm panel rm brief
+cm slot logo --image /assets/logo.png --span 1 --h 160   # reserve space (the user can drag it anywhere)
+cm layout '{"flow":"horizontal"}'         # also: order, spans, hidden, reveal
+cm ops '[{"op":"view","sheet":"Dashboard","theme":"ocean","font":"rounded"}]'
+```
+Themes: aurora nebula ocean ember forest ink grain neuro warp smoke rays swirl blobs. Fonts: display sans serif mono
+rounded condensed geometric hand. For a sheet-layout dashboard, put titles in big-font cells and charts/KPIs where they
+should appear; hide gridlines with `{"op":"view","sheet":"Dashboard","grid":false}`.
+
+## Voice and coordinates
+
+The user may speak: *"add C23 and D32"*. Coordinates are A1; the sheet prefix is optional (`Settings!B1`; quote names
+with spaces: `'My data'!A1`). If they don't say where the result goes, write to their **active cell** (`cm sel`) — or the
+first empty cell below it — and say the address out loud. "This / these / the selected ones" = `cm sel`.
 
 ## Formulas
 
-`+ - * / ^ & % = <> < > <= >=`, refs `A1 $A$1 A1:B9 Sheet!A1`, args separated by `,` or `;`.
+Operators `+ - * / ^ & % = <> < > <= >=`; refs `A1 $A$1 A1:B9 A:A 2:2 Sheet!A1 Table[Column]`; separators `,` or `;`.
 SUM AVERAGE MIN MAX COUNT COUNTA COUNTBLANK PRODUCT SUMIF COUNTIF AVERAGEIF IF IFS IFERROR AND OR NOT XOR
 ISBLANK ISNUMBER ISTEXT ISERROR ROUND ROUNDUP ROUNDDOWN INT ABS SQRT POWER MOD LEN UPPER LOWER TRIM LEFT RIGHT
 MID EXACT CONCAT CONCATENATE TEXTJOIN VLOOKUP MATCH INDEX ROWS COLUMNS PI NA IMAGE HYPERLINK.
-Errors: `#REF! #DIV/0! #NAME? #VALUE! #N/A #CYCLE! #ERROR!` (parse). Checks/validation = `IF(…,"ok","✗ …")` columns.
+Errors: `#REF! #DIV/0! #NAME? #VALUE! #N/A #CYCLE! #ERROR!`. Checks/validation = `IF(…,"ok","✗ …")` columns.
 
 ## Milestones
 
-`cm commit "msg"` saves a named snapshot. `cm diff last` (or `m3`) = what changed since, move-aware.
-`cm restore m3` reverts (user-facing; only when asked). The user saves milestones too (Ctrl+S).
-
-The user can switch any sheet to **Live mode**: a full-screen, real-time presentation of that sheet (shader
-background, glass cards, white charts, animated values). Layout comes from the sheet itself — put titles in big-font
-cells, KPIs/charts where they should appear. Your writes animate in live.
+`cm commit "message"` saves a named snapshot. `cm diff last` (or `m3`) shows what changed since — move-aware.
+`cm restore m3` reverts (only when asked). The user saves milestones too (Ctrl+S).
 
 ## Etiquette
 
-- Add, don't overwrite: put your output in new columns/sheets unless asked to change the user's cells.
-- Keep batches small and meaningful — the user sees each one flash purple.
+- Add, don't overwrite: new columns, tables or sheets unless asked to change the user's cells.
+- Keep batches small and meaningful — each one flashes on the user's screen.
 - Never rewrite formulas the user wrote unless asked; leave a `note` instead.
+- In Live, don't hijack the screen: use `cm present` only when the user asks or clearly expects it.
 
 ## HTTP reference (text by default, `&format=json` for JSON)
 
 | | |
 |---|---|
-| `GET /api/overview` | docs, sheets, used ranges, selection |
+| `GET /api/overview` | docs, sheets, used ranges, tables, charts, selection |
 | `GET /api/changes?since=N[&exclude=agent][&mode=net][&doc=]` | change feed; last line `cursor: N` |
 | `GET /api/read?range=Sheet!A1:F20[&doc=]` | non-empty cells (`Sheet!` alone = used range, `@Table` = records) |
 | `GET /api/find?q=text` | cells containing text |
-| `GET /api/selection` | user's current selection |
+| `GET /api/selection` | the user's current selection |
 | `POST /api/ops` | `{doc?, by, ops:[…], expect?}` → version + changes (`?format=text`) |
-| `POST /api/commit` `{message}` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore {commit}` | milestones |
-| `POST /api/focus {range, label}` | highlight where you work |
-| `POST /api/docs {type:"sheet"|"text", title}` | new canvas |
-| `POST /api/sql {sql, write?, into?:{name,at}}` | SQL over tables |
+| `POST /api/sql` | `{sql, write?, into?:{name,at}}` |
 | `GET /api/table?name=` · `PUT /api/table {name, rows, at?}` | table ⇄ JSON |
 | `GET /api/chart?id=` | chart data |
 | `GET /api/export?sheet=&format=md\|html\|json` | sheet as a document |
 | `POST /api/assets` (raw image body) | → `{url}` for `=IMAGE(url)` |
+| `POST /api/commit {message}` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore {commit}` | milestones |
+| `POST /api/focus {range, label}` | highlight where you work |
+| `POST /api/present {sheet, mode?, focus?, off?}` · `GET /api/live` | drive Live · read what it shows |
+| `POST /api/docs {type:"sheet"\|"text", title}` | new workbook / notes |
 | `GET /api/events` | SSE stream of every batch |
 
 Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows {at,count}` · `insertCols|deleteCols {at:"C",count}` ·
-`format {range|ranges,style}` · `note {cell,text}` · `resize {cols:{A:140},rows:{"3":40}}` · `freeze {rows,cols}` ·
-`borders {range|ranges, type, style: solid|medium|thick|dashed|dotted|double, color}` ·
-`merge {range, type: all|horizontal|vertical}` · `unmerge {range}` · `view {sheet, grid}` ·
-`addChart {type, range|table(+x,y)|value, title, at, dx, dy, w, h}` · `updateChart {id, …}` · `deleteChart {id}` · `addSheet {name}` · `renameSheet {sheet,name}` · `deleteSheet {sheet}` ·
-tables: `table {name,range}` · `deleteTable {name}` · `renameTable {name,newName}` · `appendRows {table,rows:[{Col:v}|[v,…]]}` ·
-`updateRows {table, key|match{Col:v}|rows[1..], set{Col:v}}` · `removeRows {table, key|match|rows}` · `addColumn {table,name,values?}`. Text docs: `setText {text}` · `append {text}`.
-Every op takes optional `sheet`; cell keys may carry a sheet prefix.
+`format {range|ranges,style}` · `borders {range|ranges,type,style,color}` · `merge {range,type}` · `unmerge {range}` ·
+`note {cell,text}` · `resize {cols:{A:140},rows:{"3":40}}` · `freeze {rows,cols}` · `view {sheet,grid?,theme?,font?}` ·
+`addSheet {name}` · `renameSheet {sheet,name}` · `deleteSheet {sheet}` ·
+tables: `table {name,range}` · `deleteTable` · `renameTable {name,newName}` · `appendRows {table,rows}` ·
+`updateRows {table, key|match|rows, set}` · `removeRows {table, key|match|rows}` · `addColumn {table,name,values?}` ·
+charts: `addChart {type, range|table(+x,y)|value, title, at, dx, dy, w, h}` · `updateChart {id,…}` · `deleteChart {id}` ·
+live: `liveLayout {order, spans, hidden, flow, reveal, slots}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}`.
+Text docs: `setText {text}` · `append {text}`. Every sheet op takes an optional `sheet`; cell keys may carry a sheet prefix.

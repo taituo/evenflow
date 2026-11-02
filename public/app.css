@@ -157,8 +157,8 @@ select.tb { appearance: none; padding: 0 8px; background: none; font: inherit; }
 .lv-card, .lv-text { position: absolute; box-sizing: border-box; transition: left .5s cubic-bezier(.2,.8,.2,1), top .5s cubic-bezier(.2,.8,.2,1), width .5s, height .5s; }
 .lv-card {
   border-radius: 20px; padding: 14px 18px; overflow: hidden;
-  background: linear-gradient(160deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
-  backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%);
+  background: linear-gradient(160deg, rgba(255,255,255,.15), rgba(255,255,255,.04)), rgba(12,12,32,.22);
+  backdrop-filter: blur(30px) saturate(150%) brightness(.92); -webkit-backdrop-filter: blur(30px) saturate(150%) brightness(.92);
   border: 1px solid rgba(255,255,255,.22);
   box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 20px 50px -20px rgba(0,0,0,.45);
 }
@@ -225,3 +225,64 @@ select.tb { appearance: none; padding: 0 8px; background: none; font: inherit; }
 .lv-stage.lv-linking .lv-card:not(.lv-linked), .lv-stage.lv-linking .lv-text:not(.lv-linked) { opacity: .35; filter: saturate(.6); }
 .lv-link { background: rgba(255,255,255,.9) !important; color: #101028 !important; border-radius: 6px; box-shadow: 0 0 24px rgba(255,255,255,.6); text-shadow: none; }
 ::view-transition-group(*) { animation-duration: .55s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
+
+/* focus mode: one view, full screen, live */
+.lv-zoom { position: absolute; right: 10px; bottom: 10px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.12); color: #fff; font-size: 14px; cursor: pointer; opacity: 0; transition: opacity .2s; z-index: 2; }
+.lv-card:hover .lv-zoom { opacity: 1; }
+.lv-card.lv-focus { position: fixed !important; left: 6vw !important; top: 7vh !important; width: 88vw !important; height: 80vh !important; z-index: 5; padding: 28px 34px; }
+.lv-card.lv-focus .lv-title, .lv-card.lv-focus .lv-label { font-size: 15px; }
+.lv-card.lv-focus .lv-statv { font-size: 18vh; }
+.lv-card.lv-focus.lv-table { font-size: 22px !important; overflow: auto; }
+.lv-card.lv-focus::after { display: none; }
+.lv-focusing .lv-card:not(.lv-focus), .lv-focusing .lv-text { opacity: 0; pointer-events: none; }
+.lv-focusing .lv-scroll { overflow: hidden; }
+.lv-kiosk .lv-bar, .lv-kiosk .lv-zoom { display: none; }
+
+/* panels, slots, arranging */
+.lv-panel .lv-pv { font-size: 44px; font-weight: 300; letter-spacing: -.03em; margin: 2px 0 6px; font-variant-numeric: tabular-nums; }
+.lv-md { font-size: 15px; line-height: 1.5; color: rgba(255,255,255,.92); }
+.lv-md p { margin: 0 0 6px; } .lv-md ul { margin: 4px 0 6px; padding-left: 18px; } .lv-md code { background: rgba(255,255,255,.15); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
+.lv-pimg { max-width: 100%; border-radius: 12px; margin-top: 8px; }
+.lv-card.lv-slot { background: transparent; border: 1.5px dashed transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; display: grid; place-items: center; }
+.lv-card.lv-slot img { max-width: 100%; max-height: 100%; object-fit: contain; grid-area: 1 / 1; }
+.lv-card.lv-slot span { grid-area: 1 / 1; font: 500 12px system-ui; color: rgba(255,255,255,.55); opacity: 0; transition: opacity .2s; }
+.lv:not(.lv-idle) .lv-slot:not(.has-img) { border-color: rgba(255,255,255,.28); }
+.lv:not(.lv-idle) .lv-slot:not(.has-img) span { opacity: 1; }
+.lv-card.lv-slot::after { display: none; }
+.lv-rs { position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; opacity: 0; transition: opacity .2s; z-index: 3; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.55) 50%, rgba(255,255,255,.55) 60%, transparent 60%, transparent 70%, rgba(255,255,255,.55) 70%, rgba(255,255,255,.55) 80%, transparent 80%); }
+.lv-card:hover .lv-rs { opacity: 1; }
+.lv-card .lv-zoom { right: 26px; }
+.lv-auto .lv-card { cursor: grab; touch-action: pan-x pan-y; user-select: none; }
+.lv-auto .lv-card [contenteditable="plaintext-only"] { user-select: text; }
+.lv-card.lv-dragging { z-index: 20; cursor: grabbing; transition: none !important; box-shadow: 0 30px 80px -20px rgba(0,0,0,.6); scale: 1.02; opacity: .92; }
+.lv-card.lv-resizing { z-index: 20; transition: none !important; }
+.lv-drop-before { box-shadow: -4px 0 0 0 #fff, 0 0 30px rgba(255,255,255,.35) !important; }
+.lv-drop-after { box-shadow: 4px 0 0 0 #fff, 0 0 30px rgba(255,255,255,.35) !important; }
+.lv-h .lv-drop-before { box-shadow: 0 -4px 0 0 #fff !important; } .lv-h .lv-drop-after { box-shadow: 0 4px 0 0 #fff !important; }
+/* horizontal flow: columns that scroll sideways */
+.lv-stage.lv-hflow { display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; gap: 18px; height: 100vh; box-sizing: border-box; padding: 72px 56px 110px; min-height: 0; width: max-content; }
+.lv-hflow > .lv-card { position: relative; left: auto; top: auto; flex: none; transition: none; }
+.lv-hflow > .lv-text { display: none; }
+.lv-h .lv-scroll { overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
+.lv-hflow > .lv-card { scroll-snap-align: start; }
+/* reveal on scroll */
+.lv-hidden { opacity: 0; }
+.lv-reveal { animation: lv-reveal .8s cubic-bezier(.16,1,.3,1) both; }
+@keyframes lv-reveal { from { opacity: 0; transform: translateY(40px) scale(.96); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+.lv-h .lv-reveal { animation-name: lv-reveal-x; }
+@keyframes lv-reveal-x { from { opacity: 0; transform: translateX(60px) scale(.96); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+/* phones */
+@media (max-width: 700px) {
+  .lv-stage.lv-grid { padding: 54px 12px 120px; column-gap: 12px; grid-template-columns: 1fr; }
+  .lv-stage.lv-hflow { padding: 54px 12px 110px; }
+  .lv-card { border-radius: 16px; padding: 12px 14px; }
+  .lv-num { font-size: 56px !important; }
+  .lv-bar { bottom: 10px; left: 10px; right: 10px; transform: none; max-width: none; }
+  .lv.lv-idle .lv-bar { transform: translateY(12px); }
+  .lv-live { top: 12px; right: 14px; }
+  .lv-card.lv-focus { left: 3vw !important; width: 94vw !important; top: 8vh !important; height: 76vh !important; }
+  .lv-zoom, .lv-rs { opacity: .8; }
+}
+.lv img { -webkit-user-drag: none; user-select: none; }

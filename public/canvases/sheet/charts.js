@@ -71,7 +71,7 @@ function kpi(g, r, ch, k, z, f) {
   g.fillStyle = MUTED; g.font = `500 ${f(13)}px system-ui, sans-serif`; g.textBaseline = 'top';
   if (label) g.fillText(ellipsize(g, label, r.w - 24 * z), r.x + 14 * z, r.y + 12 * z);
   const v = k.value;
-  const text = typeof v === 'number' ? v.toLocaleString('fi-FI', { maximumFractionDigits: 2 }) : k.text || '—';
+  const text = typeof v === 'number' ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : k.text || '—';
   let size = Math.min(r.h * 0.5, 64 * z);
   g.font = `600 ${size}px system-ui, sans-serif`;
   while (size > 10 && g.measureText(text).width > r.w - 28 * z) { size -= 2; g.font = `600 ${size}px system-ui, sans-serif`; }
