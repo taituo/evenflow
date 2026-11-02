@@ -6,9 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, httpErr } from './lib/store.js';
 import { TYPES } from './public/shared/types/index.js';
+import { splitSheet } from './public/shared/a1.js';
 import { exportSheet } from './public/shared/export.js';
 import { runSql, tableJson, jsonToOps, formatResult } from './lib/sql.js';
-import { formatEntries, netChanges, formatRead, formatDiff, formatChangeList } from './lib/format.js';
+import { formatEntries, netChanges, formatRead, formatDiff, formatChangeList, formatHistory } from './lib/format.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -40,7 +41,7 @@ export function createServer(store) {
 
     'GET /api/overview': (req, res, u) => {
       const s = store.state;
-      const lines = [`Lotus 456 v${s.version}${store.commits.length ? ` · last milestone ${store.commits.at(-1).id} "${store.commits.at(-1).message}" (v${store.commits.at(-1).version})` : ''}`];
+      const lines = [`Spread v${s.version}${store.commits.length ? ` · last milestone ${store.commits.at(-1).id} "${store.commits.at(-1).message}" (v${store.commits.at(-1).version})` : ''}`];
       for (const id of s.order) {
         const d = s.docs[id];
         const info = TYPES[d.type].describe(d);
@@ -53,6 +54,8 @@ export function createServer(store) {
         }
         else lines.push(`  ${info.lines} lines`);
       }
+      const ppl = store.people();
+      if (ppl.length) lines.push(`people here: ${ppl.map((p) => `${p.name} (${p.live ? 'Live ' + (p.live.mode === 'auto' ? 'combined' : p.live.sheet) : `${p.sheet ?? ''}${p.active ? '!' + p.active : ''}`})`).join(', ')}`);
       if (store.selection) lines.push(`user selection: [${store.selection.doc}] ${store.selection.sheet}!${store.selection.ranges.join(',')} (active ${store.selection.active})`);
       wantText(u) ? send(res, 200, lines.join('\n')) : send(res, 200, { version: s.version, docs: s.order.map((id) => ({ id, type: s.docs[id].type, title: s.docs[id].title, info: TYPES[s.docs[id].type].describe(s.docs[id]) })), selection: store.selection });
     },
@@ -65,7 +68,7 @@ export function createServer(store) {
 
     'POST /api/ops': async (req, res, u) => {
       const b = await body(req);
-      const e = store.batch({ doc: b.doc, by: b.by || 'agent', clientId: b.clientId, ops: b.ops || (b.op ? [b] : null), expect: b.expect, label: b.label });
+      const e = store.batch({ doc: b.doc, by: b.by || 'agent', clientId: b.clientId, ops: b.ops || (b.op ? [b] : null), expect: b.expect, label: b.label, who: b.who, color: b.color });
       if (u.searchParams.get('format') === 'text') return send(res, 200, [`ok v${e.v}`, ...formatChangeList(e.changes, e.recalc)].join('\n'));
       send(res, 200, { version: e.v, changes: e.changes, recalc: e.recalc, inverse: b.wantInverse ? e.inverse : undefined });
     },
@@ -173,8 +176,26 @@ export function createServer(store) {
     },
     'POST /api/present': async (req, res) => {
       const b = await body(req);
-      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off });
+      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off, slide: b.slide });
       send(res, 200, { ok: true });
+    },
+    'POST /api/presence': async (req, res) => { const b = await body(req); if (b.leave) store.leavePresence(b.id); else store.touchPresence(b); send(res, 200, { ok: true }); },
+    'GET /api/presence': (req, res, u) => {
+      const ppl = store.people();
+      if (u.searchParams.get('format') === 'json') return send(res, 200, ppl);
+      send(res, 200, ppl.length ? ppl.map((p) => `${p.name}  [${p.doc}] ${p.sheet ?? ''}${p.active ? '!' + p.active : ''}${p.ranges?.length ? ' sel ' + p.ranges.join(',') : ''}${p.live ? `  · LIVE ${p.live.mode === 'auto' ? 'combined' : p.live.sheet}${p.live.focus ? ' focus ' + p.live.focus : ''}` : ''}`).join('\n') : 'nobody else is here');
+    },
+    'GET /api/history': (req, res, u) => {
+      const d = store.doc(u.searchParams.get('doc'));
+      const q = u.searchParams;
+      let list, title;
+      if (q.get('table')) { list = store.tableHistory(d.id, q.get('table')); title = `history of table ${q.get('table')}`; }
+      else {
+        const [sn, a] = splitSheet(q.get('cell') || '');
+        const sheet = (sn ? d.sheets.find((x) => x.name.toLowerCase() === sn.toLowerCase()) : d.sheets[0])?.name;
+        list = store.cellHistory(d.id, sheet, String(a).toUpperCase()); title = `history of ${sheet}!${String(a).toUpperCase()}`;
+      }
+      q.get('format') === 'json' ? send(res, 200, list) : send(res, 200, formatHistory(list, title));
     },
     'POST /api/live-state': async (req, res) => { store.live = await body(req); store.live.ts = Date.now(); send(res, 200, { ok: true }); },
     'GET /api/live': (req, res, u) => {
@@ -238,7 +259,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const store = new Store(DATA).init();
   const srv = createServer(store);
   srv.listen(PORT, HOST, () => {
-    console.log(`Lotus 456  http://${HOST}:${PORT}   data: ${DATA}`);
+    console.log(`Spread  http://${HOST}:${PORT}   data: ${DATA}`);
     if (HOST !== '127.0.0.1' && HOST !== 'localhost') console.warn('WARNING: no auth. Do not expose to untrusted networks.');
   });
   const bye = () => { store.flush(); process.exit(0); };

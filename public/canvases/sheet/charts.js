@@ -3,6 +3,7 @@ import { isErr } from '../../shared/formula.js';
 
 export const THEMES = {
   light: { series: ['#1a73e8', '#e8710a', '#188038', '#d93025', '#9334e6', '#12b5cb', '#f9ab00', '#e52592', '#5f6368'], ink: '#3c4043', muted: '#80868b', grid: '#e8eaed', axis: '#bdc1c6', bg: '#fff', border: '#dadce0', slice: '#fff', title: true, value: '#202124' },
+  glassDark: { series: ['rgba(16,16,40,.92)', 'rgba(16,16,40,.6)', 'rgba(16,16,40,.4)', 'rgba(16,16,40,.25)', 'rgba(16,16,40,.78)', 'rgba(16,16,40,.5)', 'rgba(16,16,40,.32)'], ink: 'rgba(16,16,40,.92)', muted: 'rgba(16,16,40,.62)', grid: 'rgba(16,16,40,.14)', axis: 'rgba(16,16,40,.35)', bg: null, border: null, slice: null, title: false, value: '#101028' },
   glass: { series: ['rgba(255,255,255,.96)', 'rgba(255,255,255,.62)', 'rgba(255,255,255,.38)', 'rgba(255,255,255,.22)', 'rgba(255,255,255,.80)', 'rgba(255,255,255,.50)', 'rgba(255,255,255,.30)'], ink: 'rgba(255,255,255,.95)', muted: 'rgba(255,255,255,.66)', grid: 'rgba(255,255,255,.14)', axis: 'rgba(255,255,255,.35)', bg: null, border: null, slice: null, title: false, value: '#fff', font: '"SF Pro Display", "Inter", system-ui, sans-serif' },
 };
 export const SERIES = THEMES.light.series;
@@ -188,7 +189,7 @@ function pie(g, a, data, z, f) {
     else { g.save(); g.globalCompositeOperation = 'destination-out'; g.strokeStyle = '#000'; g.lineWidth = 3 * z; g.stroke(); g.restore(); }
     if (d > 0.35) {
       const m = ang + d / 2;
-      g.fillStyle = T.bg ? '#fff' : 'rgba(20,20,40,.75)'; g.font = `600 ${f(11)}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = T.bg ? '#fff' : T === THEMES.glassDark ? 'rgba(255,255,255,.9)' : 'rgba(20,20,40,.75)'; g.font = `600 ${f(11)}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(Math.round((x.v / total) * 100) + '%', cx + Math.cos(m) * R * 0.62, cy + Math.sin(m) * R * 0.62);
     }
     ang += d;

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const BASE = (process.env.CANVAS_URL || 'http://127.0.0.1:3210').replace(/\/$/, '');
-const CURSOR = process.env.CM_CURSOR || path.join(os.homedir(), '.lotus456-cursor');
+const CURSOR = process.env.CM_CURSOR || path.join(os.homedir(), '.spread-cursor');
 const DOC = process.env.CM_DOC || '';
 const BY = process.env.CM_BY || 'agent';
 
@@ -36,7 +36,7 @@ async function ops(list, extra = {}) {
   out(await call('POST', '/api/ops?format=text', { doc: DOC || undefined, by: BY, ops: list, ...extra }));
 }
 
-const help = `cm — Lotus 456 agent CLI   (CANVAS_URL=${BASE})
+const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm overview                      docs, sheets, used ranges, user selection
   cm read [Sheet!A1:F20]           non-empty cells with formulas ⇒ values
   cm changes [--all] [--net]       what changed since your cursor (default: excludes your own edits)
@@ -69,6 +69,11 @@ const help = `cm — Lotus 456 agent CLI   (CANVAS_URL=${BASE})
   cm export Dashboard [md|html]    sheet as a document (headings, tables, charts, KPIs)
   cm present Dashboard [chart:status|Tasks|C12] [--combined]   put the user's screen into Live / Focus mode
   cm present off
+  cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
+  cm people                        who else is here (and where / in Live)
+  cm slides                        list slides  ·  cm present --slide 1  (play from slide 1)
+  cm slide add id '{"title":"Q3","text":"…","sheet":"Dashboard","mode":"auto","focus":"status","bg":{"image":"/assets/x.gif","filter":"dither"},"duration":8}'
+  cm slide rm id
   cm live                          what the user's Live screen shows right now (cards, positions, what's visible)
   cm panel add id "Title" "text with **bold** and - bullets" [--value 42 --label EUR --image url --span 2]
   cm panel rm id
@@ -163,6 +168,19 @@ switch (cmd) {
   }
   case 'export': out(await call('GET', '/api/export?' + qs({ doc: DOC, sheet: args[0], format: args[1] || 'md' }))); break;
   case 'live': out(await call('GET', '/api/live')); break;
+  case 'history': out(await call('GET', '/api/history?' + qs(args[0].startsWith('@') ? { doc: DOC, table: args[0].slice(1) } : { doc: DOC, cell: args[0] }))); break;
+  case 'people': out(await call('GET', '/api/presence')); break;
+  case 'slides': {
+    const d = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc;
+    const sl = d.live?.slides || [];
+    out(sl.length ? sl.map((x, i) => `${i + 1}. ${x.id}  "${x.title || ''}"  ${x.sheet || ''} ${x.mode || ''}${x.focus ? ' focus ' + x.focus : ''}${x.bg?.image ? ' bg ' + x.bg.image + (x.bg.filter ? ' ' + x.bg.filter : '') : ''}${x.duration ? ' ' + x.duration + 's' : ''}`).join('\n') : 'no slides');
+    break;
+  }
+  case 'slide': {
+    if (args[0] === 'rm') { await ops([{ op: 'removeSlide', id: args[1] }]); break; }
+    await ops([{ op: 'slide', id: args[1], ...(args[2] ? JSON.parse(args[2]) : {}) }]);
+    break;
+  }
   case 'panel': case 'slot': case 'layout': {
     const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
     if (cmd === 'layout') { await ops([{ op: 'liveLayout', ...JSON.parse(args[0]) }]); break; }
@@ -181,6 +199,8 @@ switch (cmd) {
   }
   case 'present': {
     if (args[0] === 'off') { await call('POST', '/api/present', { off: true, doc: DOC || undefined }); out('ok'); break; }
+    const si = args.indexOf('--slide');
+    if (si >= 0) { await call('POST', '/api/present', { doc: DOC || undefined, slide: +args[si + 1] || 1, by: BY }); out('ok'); break; }
     const combined = args.includes('--combined');
     const [sheet, focus] = args.filter((a) => a !== '--combined');
     await call('POST', '/api/present', { doc: DOC || undefined, sheet, focus, mode: combined ? 'auto' : undefined, by: BY });

@@ -1,4 +1,4 @@
-# Lotus 456
+# Spread
 
 **A spreadsheet you share with your AI agent — and a live dashboard that builds itself from it.**
 
@@ -26,16 +26,19 @@ npm test           # 20 tests, incl. a 2000-round undo/redo fuzz over every stru
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
 - [Live mode](#live-mode)
+- [Slides](#slides)
+- [Multi-user and history](#multi-user-and-history)
 - [For agents](#for-agents)
 - [Versioning](#versioning)
 - [Architecture](#architecture)
 - [API reference](#api-reference)
+- [Roadmap](#roadmap)
 
 ---
 
 ## Why
 
-Agents are good at structured data but bad at screens, and people are the opposite. Lotus 456 gives both sides the
+Agents are good at structured data but bad at screens, and people are the opposite. Spread gives both sides the
 interface they're good at, on top of one versioned document:
 
 - **You** get a real spreadsheet: A1 grid, formulas, drag-to-move, fill handle, frozen panes, zoom, borders, merges.
@@ -163,6 +166,56 @@ cm live                                  # read back what the screen shows right
 (`● Dashboard::chart:status  pie "Task status"  @953,240 431×300  pie: open 3, done 1`), so the agent can reason about
 the layout the user is looking at.
 
+### Adaptive ink, flip, relations
+
+- **Adaptive ink.** Live samples the background behind every card (shader or image) and switches that card to dark
+  text and lighter glass when the background is bright. Charts repaint in a dark palette. Nothing to configure.
+- **Flip a card** (⟲) to see the sheet behind it: A1 addresses, raw formulas next to their values, and the card's
+  recent change history (who changed what). Flip back to return.
+- **Relations** (⛓, combined layout): Spread finds columns in different tables that share values, and which table feeds
+  which chart, and draws them as animated lines between the cards, labelled with the joining column.
+
+![A slide on a bright background; one card flipped to its sheet side](docs/live-slide-flip.jpg)
+
+## Slides
+
+Any Live view can become a slide: a sheet or the combined layout, optionally focused on one card or filtered to a
+few, with a title, text (light Markdown) and its own background. Then **▶ Play**: arrow keys / space / click, an
+auto-advance timer per slide, a progress bar, Esc to leave.
+
+![Title slide](docs/slide-title.jpg)
+
+- **Backgrounds**: any shader theme, or an image. Plain images, **animated GIFs and animated SVGs** play as they are.
+  Run an image through a shader with `filter: "dither"` or `"halftone"` (Paper Shaders' image filters, tinted with the
+  slide's theme). Drop an image file onto a slide in the Slides panel to upload it.
+- **Text-only slides**: `cards: []` gives a full-screen title slide.
+- Slides are data in the workbook (`live.slides`), versioned and undoable like everything else, so the agent can
+  build a deck:
+
+```bash
+cm slide add intro '{"title":"Robot build — week 42","text":"Where we are, what is **blocked**.","cards":[]}'
+cm slide add costs '{"title":"Costs","sheet":"Dashboard","mode":"auto","cards":["kpiCost","parts"],"bg":{"image":"/assets/x.gif","filter":"dither"},"duration":8}'
+cm slides                     # list
+cm present --slide 1          # play it on the user's screen
+```
+
+Deep link: `/?slides=1` starts the show (add `&kiosk=1` for a wall screen).
+
+![Slides panel](docs/live-slides.jpg)
+![A dithered image background](docs/live-dither.jpg)
+
+## Multi-user and history
+
+- Open the same server in several browsers: everyone gets a name and color (click your avatar to change it). You see
+  each other's **selection and active cell** with a name tag, colored dots on the sheet tabs they're on, and their
+  edits **flash in their color** (agents flash purple). Live shows who's watching. All views update in real time —
+  including a Live screen on a TV while someone edits the grid.
+- `cm people` lists who is where (including who is in Live and on which slide).
+- **History of a cell or a table**: right-click → *History of C8* / *History of table Tasks*. Cell history follows the
+  cell back through moves and row/column inserts, so it survives cut/paste. Agents: `cm history Project!C8`,
+  `cm history @Tasks`.
+- Every batch is atomic: one undo reverts the whole batch, whether it was a paste, a SQL write-back or an agent edit.
+
 ## For agents
 
 The full guide is [`AGENT_SKILL.md`](AGENT_SKILL.md) (also served at `GET /api/help`). The loop:
@@ -246,10 +299,20 @@ Text responses by default; add `format=json` for JSON.
 | `POST /api/commit` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore` | milestones |
 | `GET /api/selection` · `POST /api/focus` | the user's selection · highlight where the agent works |
 | `POST /api/present` · `GET /api/live` | drive Live / read what it shows |
-| `GET /api/events` | SSE stream of every change |
+| `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history of a cell (move-aware) or a table |
+| `GET /api/presence` · `POST /api/presence` | who is here, where, and in Live |
+| `GET /api/events` | SSE stream of every change and presence update |
 
 Configuration: `PORT`, `HOST` (default `127.0.0.1` — there is no authentication), `CANVAS_DATA` (data directory),
 `CANVAS_URL` for the CLI.
+
+## Roadmap
+
+- **Grafana dashboard import** — read a Grafana dashboard JSON (panels, grid positions, titles, thresholds) and map it
+  onto Live cards and charts. Grafana is AGPL-3.0, so this will be an importer of its JSON format, not a port of its code.
+- **Network graphs** — nodes and edges from two tables (e.g. agents and their messages) as a force layout card.
+- More chart types (scatter, heatmap, sparkline columns in tables), conditional formatting.
+- Authentication for anything beyond a trusted LAN.
 
 ## Credits
 

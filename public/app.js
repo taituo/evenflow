@@ -67,10 +67,52 @@ export function popover(anchor, build) {
   return p;
 }
 
+// ------------------------------------------------------------------ who am I (multi-user)
+const PALETTE = ['#e8710a', '#1e8e3e', '#d93025', '#1a73e8', '#c5221f', '#129eaf', '#b06000', '#a142f4', '#e52592', '#188038'];
+const ME = (() => {
+  let u = null;
+  try { u = JSON.parse(localStorage.getItem('spread.user') || 'null'); } catch {}
+  if (!u?.id) {
+    const id = 'u' + Math.random().toString(36).slice(2, 8);
+    u = { id, name: 'Guest ' + id.slice(1, 4).toUpperCase(), color: PALETTE[Math.floor(Math.random() * PALETTE.length)] };
+    try { localStorage.setItem('spread.user', JSON.stringify(u)); } catch {}
+  }
+  return u;
+})();
+let myPresence = {};
+function sendPresence(extra) {
+  Object.assign(myPresence, extra || {});
+  post('/api/presence', { ...ME, doc: S.docId, ...myPresence }).catch(() => {});
+}
+setInterval(() => { if (!document.hidden) sendPresence(); }, 15000);
+addEventListener('pagehide', () => navigator.sendBeacon?.('/api/presence', new Blob([JSON.stringify({ id: ME.id, leave: true })], { type: 'application/json' })));
+S.people = [];
+function renderPeople() {
+  const el = $('#people');
+  const others = S.people.filter((p) => p.id !== ME.id);
+  el.innerHTML = others.slice(0, 6).map((p) => `<b class="av" style="background:${esc(p.color || '#888')}" title="${esc(p.name)} — ${esc(p.doc === S.docId ? (p.sheet || '') + (p.active ? '!' + p.active : '') : 'in ' + p.doc)}${p.live ? ' · in Live' : ''}">${esc((p.name || '?')[0].toUpperCase())}</b>`).join('')
+    + `<b class="av me" style="background:${esc(ME.color)}" title="You: ${esc(ME.name)} — click to rename">${esc(ME.name[0].toUpperCase())}</b>`;
+  el.querySelector('.me').onclick = (e) => popover(e.target, (pp, close) => {
+    const i = document.createElement('input');
+    i.value = ME.name; i.style.width = '160px';
+    const sw = document.createElement('div'); sw.className = 'swatches';
+    sw.innerHTML = PALETTE.map((c) => `<i data-c="${c}" style="background:${c}" class="${c === ME.color ? 'on' : ''}"></i>`).join('');
+    sw.onclick = (ev) => { const c = ev.target.dataset.c; if (!c) return; ME.color = c; sw.querySelectorAll('i').forEach((x) => x.classList.toggle('on', x.dataset.c === c)); };
+    const go = () => { ME.name = i.value.trim() || ME.name; try { localStorage.setItem('spread.user', JSON.stringify(ME)); } catch {} close(); renderPeople(); sendPresence(); };
+    i.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } };
+    const ok = document.createElement('button'); ok.className = 'btn'; ok.textContent = 'OK'; ok.onclick = go;
+    pp.append(i, sw, ok);
+    setTimeout(() => i.select());
+  });
+}
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
 // ------------------------------------------------------------------ ctx given to views
 let selTimer = null;
 const ctx = {
-  clientId, toast, menu, popover, get, post,
+  clientId, toast, menu, popover, get, post, me: ME,
+  /** Live mode tells others what this user is looking at. */
+  livePresence(l) { sendPresence({ live: l || null }); },
   get doc() { return S.doc; },
   get docId() { return S.docId; },
   toolbar: $('#toolslot'),
@@ -85,7 +127,7 @@ const ctx = {
       return null;
     }
     S.pending++;
-    post('/api/ops', { doc: S.docId, by: 'user', clientId, ops, label })
+    post('/api/ops', { doc: S.docId, by: 'user', who: ME.name, color: ME.color, clientId, ops, label })
       .then((r) => { S.version = Math.max(S.version, r.version); renderVer(); })
       .catch((e) => { toast(e.message, true); S.dirty = true; })
       .finally(() => { S.pending--; if (!S.pending && S.dirty) reloadDoc(); });
@@ -93,7 +135,10 @@ const ctx = {
   },
   reportSelection(sel) {
     clearTimeout(selTimer);
-    selTimer = setTimeout(() => post('/api/selection', { doc: S.docId, ...sel }).catch(() => {}), 250);
+    selTimer = setTimeout(() => {
+      post('/api/selection', { doc: S.docId, ...sel }).catch(() => {});
+      sendPresence({ sheet: sel.sheet, ranges: sel.ranges, active: sel.active });
+    }, 250);
   },
   milestone: () => milestonePopover(),
 };
@@ -167,6 +212,8 @@ async function openDoc(id) {
   S.view = mod.mount($('#view'), ctx);
   history.replaceState(null, '', '#' + id);
   renderDocs(); renderVer();
+  S.view?.presence?.(S.people.filter((p) => p.id !== ME.id && p.doc === id));
+  sendPresence({ sheet: null, ranges: null, active: null });
 }
 
 async function reloadDoc() {
@@ -186,7 +233,7 @@ function renderVer() { $('#ver').textContent = 'v' + S.version; }
 // ------------------------------------------------------------------ live
 function connect() {
   const es = new EventSource('/api/events');
-  es.onopen = () => $('#conn').classList.add('ok');
+  es.onopen = () => { $('#conn').classList.add('ok'); sendPresence(); };
   es.onerror = () => $('#conn').classList.remove('ok');
   es.onmessage = (m) => {
     const e = JSON.parse(m.data);
@@ -197,6 +244,13 @@ function connect() {
       return;
     }
     if (e.type === 'commit') { S.commits.push(e.commit); if (!$('#drawer').hidden && drawerMode === 'history') renderDrawer(); toast(`Milestone ${e.commit.id}: ${e.commit.message}`); return; }
+    if (e.type === 'presence') {
+      S.people = e.people || [];
+      renderPeople();
+      const others = S.people.filter((p) => p.id !== ME.id);
+      S.view?.presence?.(others.filter((p) => p.doc === S.docId));
+      return;
+    }
     if (e.type === 'focus') { if (e.doc === S.docId) S.view?.focus?.(e); return; }
     if (e.type === 'present') {
       const go = () => S.view?.present?.(e);
@@ -381,8 +435,9 @@ async function showDiff(c) {
   const want = location.hash.slice(1);
   await openDoc(S.docs.find((d) => d.id === want) ? want : S.docs[0].id);
   connect();
+  renderPeople();
   // deep link straight into Live / Focus: ?live=Dashboard&mode=auto&focus=chart:status&kiosk=1
   const q = new URLSearchParams(location.search);
-  if (q.has('live')) S.view?.present?.({ sheet: q.get('live'), mode: q.get('mode') || undefined, focus: q.get('focus') || undefined, kiosk: q.has('kiosk') });
+  if (q.has('live') || q.has('slides')) S.view?.present?.({ sheet: q.get('live') || undefined, mode: q.get('mode') || undefined, focus: q.get('focus') || undefined, kiosk: q.has('kiosk'), slide: q.has('slides') ? +q.get('slides') || 1 : undefined });
   addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== S.docId && S.docs.find((d) => d.id === id)) openDoc(id); });
 })();

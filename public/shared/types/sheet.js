@@ -85,6 +85,8 @@ export function apply(st, op) {
     case 'liveLayout': return opLiveLayout(st, op);
     case 'panel': return opPanel(st, op);
     case 'removePanel': return opRemovePanel(st, op);
+    case 'slide': return opSlide(st, op);
+    case 'removeSlide': return opRemoveSlide(st, op);
     case 'addChart': return opAddChart(st, op);
     case 'updateChart': return opUpdateChart(st, op);
     case 'deleteChart': return opDeleteChart(st, op);
@@ -692,7 +694,7 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
 // ------------------------------------------------------------------ live (combined) layout — workbook level
 // st.live = { order:[key], spans:{key:{span,h}}, hidden:[key], flow:'vertical'|'horizontal', reveal:bool,
 //             slots:[{id, span, h, image?}], panels:[{id, title, text, value, label, image, span, h, by}] }
-const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels'];
+const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels', 'slides', 'links'];
 function setLive(st, patch) {
   const old = {};
   const L = { ...(st.live || {}) };
@@ -724,6 +726,30 @@ function opRemovePanel(st, op) {
   if (panels.length === (st.live?.panels || []).length) return { inverse: [], changes: [] };
   const inv = setLive(st, { panels: panels.length ? panels : null });
   return { inverse: [inv], changes: [{ k: 'panel', action: 'remove', id: op.id }] };
+}
+
+/**
+ * slide: { id, title?, text?, sheet?, mode?: 'sheet'|'auto', focus?, cards?: [key…], bg?: { theme? | image?, filter?: 'none'|'dither'|'halftone' },
+ *          duration?: seconds, index?: position }  — upsert. Slides turn Live into a presentation engine.
+ */
+const SLIDE_KEYS = ['title', 'text', 'sheet', 'mode', 'focus', 'cards', 'bg', 'duration', 'align'];
+function opSlide(st, op) {
+  if (!op.id) fail('slide needs id');
+  const slides = clone(st.live?.slides || []);
+  const i = slides.findIndex((x) => x.id === op.id);
+  const sl = { ...(i >= 0 ? slides[i] : {}), id: String(op.id) };
+  for (const k of SLIDE_KEYS) if (k in op) { if (op[k] == null) delete sl[k]; else sl[k] = clone(op[k]); }
+  if (i >= 0) slides.splice(i, 1);
+  const at = op.index != null ? Math.max(0, Math.min(slides.length, op.index)) : i >= 0 ? i : slides.length;
+  slides.splice(at, 0, sl);
+  const inv = setLive(st, { slides });
+  return { inverse: [inv], changes: [{ k: 'panel', action: i >= 0 ? 'update slide' : 'add slide', id: sl.id, title: sl.title || '' }] };
+}
+function opRemoveSlide(st, op) {
+  const slides = (st.live?.slides || []).filter((x) => x.id !== op.id);
+  if (slides.length === (st.live?.slides || []).length) return { inverse: [], changes: [] };
+  const inv = setLive(st, { slides: slides.length ? slides : null });
+  return { inverse: [inv], changes: [{ k: 'panel', action: 'remove slide', id: op.id }] };
 }
 
 export function mergeAt(sh, c, r) {

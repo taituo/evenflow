@@ -3,6 +3,7 @@
 // sheet's own layout — charts in white, KPIs, named tables (values editable, structure locked), titles.
 import * as PS from '../../vendor/paper-shaders/index.js';
 import { FONTS } from '../../shared/fonts.js';
+import { sampleBackground, findRelations, drawRelations, flip, backSide } from './live-extras.js';
 import { drawChart } from './charts.js';
 import { tables as allTables, chartData, mergeAt, tableColumns, usedRange } from '../../shared/types/sheet.js';
 import { Engine, fmtValue, isImg } from '../../shared/engine.js';
@@ -45,14 +46,18 @@ const swatch = (p) => { const c = p.colors || [p.colorBack, p.colorMid, p.colorF
 const DEF_W = 100, DEF_H = 21;
 const ease = (t) => 1 - Math.pow(1 - t, 3);
 
-export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMode, focus: startFocus, kiosk }) {
+export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMode, focus: startFocus, kiosk, slide: startSlide }) {
   let sheetName = startSheet;
   const sh = () => doc.sheets.find((s) => sameName(s.name, sheetName)) || doc.sheets[0];
   const root = document.createElement('div');
   root.className = 'lv';
   root.innerHTML = `
     <div class="lv-bg"></div>
-    <div class="lv-scroll"><div class="lv-stage"></div></div>
+    <div class="lv-bgimg"><img alt="" draggable="false"></div>
+    <div class="lv-scroll"><div class="lv-slidetext"></div><div class="lv-stage"></div></div>
+    <div class="lv-slides"></div>
+    <div class="lv-progress"><i></i></div>
+    <div class="lv-dots"></div>
     <div class="lv-bar">
       <div class="lv-modes"><button class="lv-btn" data-m="sheet" title="Each sheet with its own layout">Sheet</button><button class="lv-btn" data-m="auto" title="All tables, charts and KPIs from every sheet, auto-composed">✦ Combined</button></div>
       <div class="lv-sep"></div>
@@ -63,30 +68,59 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       <button class="lv-btn" data-a="flow" title="Scroll direction (combined)">↕</button>
       <button class="lv-btn" data-a="reveal" title="Reveal cards as they scroll into view">✨</button>
       <button class="lv-btn" data-a="space" title="Add an empty space (e.g. for a logo) — drag it anywhere">＋ Space</button>
+      <button class="lv-btn" data-a="links" title="Show relations between tables (and which table feeds which chart)">⛓</button>
       <button class="lv-btn" data-a="font" title="Typeface for this sheet in Live">Aa</button>
+      <button class="lv-btn" data-a="slides" title="Slides: turn views into a presentation">▤ Slides</button>
       <button class="lv-btn" data-a="fs" title="Fullscreen">⛶</button>
       <button class="lv-btn" data-a="exit" title="Back to edit mode (Esc)">✎ Edit</button>
     </div>
-    <div class="lv-live"><i></i>LIVE</div>`;
+    <div class="lv-live"><span class="lv-people"></span><i></i>LIVE</div>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
   const stage = $('.lv-stage'), scroller = $('.lv-scroll'), bar = $('.lv-bar');
 
   // ------------------------------------------------------------- shader background
   let mount = null, mountedShader = null;
-  const themeName = () => (PRESETS[sh().view?.theme] ? sh().view.theme : 'aurora');
+  let slide = null;           // the slide being shown (null = free browsing)
+  const themeName = () => (PRESETS[slide?.bg?.theme] ? slide.bg.theme : PRESETS[sh().view?.theme] ? sh().view.theme : 'aurora');
+  function mountShader(id, frag, uni, speed) {
+    if (mount && mountedShader === id) { mount.setUniforms(uni); mount.setSpeed(speed); return; }
+    try { mount?.dispose(); } catch { /* remount */ }
+    $('.lv-bg').innerHTML = '';
+    // preserveDrawingBuffer lets adaptive ink read the background behind each card
+    mount = new PS.ShaderMount($('.lv-bg'), frag, uni, { preserveDrawingBuffer: true, premultipliedAlpha: false }, speed, 0, 1, 1920 * 1080 * 2);
+    mountedShader = id;
+  }
   function applyTheme() {
-    const p = PRESETS[themeName()];
-    const [frag, uni] = SHADERS[p.shader](p);
-    try {
-      if (mount && mountedShader === p.shader) { mount.setUniforms(uni); mount.setSpeed(p.speed); }
-      else {
-        try { mount?.dispose(); } catch { /* remount */ }
-        $('.lv-bg').innerHTML = '';
-        mount = new PS.ShaderMount($('.lv-bg'), frag, uni, undefined, p.speed, 0, 1, 1920 * 1080 * 2);
-        mountedShader = p.shader;
+    const img = slide?.bg?.image;
+    const filter = slide?.bg?.filter || 'none';
+    const bgimg = $('.lv-bgimg'), im = bgimg.querySelector('img');
+    root.classList.toggle('lv-has-bgimg', !!img && filter === 'none');
+    if (img && filter === 'none') {
+      // plain bitmap / animated GIF / animated SVG: the browser animates them natively
+      if (im.getAttribute('src') !== img) im.src = img;
+    } else if (img) {
+      const pic = new Image();
+      pic.crossOrigin = 'anonymous';
+      pic.src = img;
+      const tint = PRESETS[themeName()];
+      const front = tint.colors?.[tint.colors.length - 1] || '#ffffff', back = tint.colorBack || tint.colors?.[0] || '#000000';
+      const sizingU = { u_fit: PS.ShaderFitOptions.cover, u_rotation: 0, u_scale: 1, u_offsetX: 0, u_offsetY: 0, u_originX: 0.5, u_originY: 0.5, u_worldWidth: 0, u_worldHeight: 0 };
+      const ready = () => {
+        try {
+          if (filter === 'halftone') mountShader('halftone:' + img, PS.halftoneDotsFragmentShader, { u_image: pic, u_colorFront: C(front), u_colorBack: C(back), u_size: 0.5, u_radius: 1.25, u_contrast: 0.4, u_originalColors: true, u_inverted: false, u_grainMixer: 0.2, u_grainOverlay: 0.2, u_grainSize: 0.5, u_grid: PS.HalftoneDotsGrids.hex, u_type: PS.HalftoneDotsTypes.gooey, ...sizingU }, 0);
+          else mountShader('dither:' + img, PS.imageDitheringFragmentShader, { u_image: pic, u_colorFront: C(front), u_colorBack: C(back), u_colorHighlight: C('#ffffff'), u_type: 4, u_pxSize: 2, u_colorSteps: 2, u_originalColors: true, u_inverted: false, ...sizingU }, 0);
+        } catch { root.classList.add('lv-has-bgimg'); im.src = img; }
+      };
+      if (pic.complete) ready(); else pic.onload = ready;
+    }
+    if (!img || filter !== 'none') {
+      if (!img) {
+        const p = PRESETS[themeName()];
+        const [frag, uni] = SHADERS[p.shader](p);
+        try { mountShader(p.shader, frag, uni, p.speed); } catch (e) { $('.lv-bg').style.background = swatch(p); }
       }
-    } catch (e) { $('.lv-bg').style.background = swatch(p); }
+    }
     root.querySelectorAll('.lv-dot').forEach((d) => d.classList.toggle('on', d.dataset.t === themeName()));
     root.style.fontFamily = FONTS[sh().view?.font]?.stack || FONTS.display.stack;
     const fb = root.querySelector('[data-a=font]');
@@ -152,7 +186,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
 
   // ------------------------------------------------------------- combined mode: all sheets, auto-composed
   let mode = 'sheet';
-  try { mode = localStorage.getItem('lotus.liveMode') === 'auto' ? 'auto' : 'sheet'; } catch {}
+  try { mode = localStorage.getItem('spread.liveMode') === 'auto' ? 'auto' : 'sheet'; } catch {}
   const excluded = new Set();
   const ORDER = { panel: -1, kpi: 0, stat: 1, chart: 2, table: 3, img: 4, slot: 5 };
   function autoItems() {
@@ -211,7 +245,13 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const L = doc.live || {};
     const panels = (L.panels || []).map((p) => ({ key: 'live::panel:' + p.id, kind: 'panel', sheet: 'live', p }));
     const slots = (L.slots || []).map((sl) => ({ key: 'live::slot:' + sl.id, kind: 'slot', sheet: 'live', sl }));
-    const all = [...panels, ...uniq, ...slots].filter((it) => !(L.hidden || []).includes(it.key));
+    let all = [...panels, ...uniq, ...slots].filter((it) => !(L.hidden || []).includes(it.key));
+    if (Array.isArray(slide?.cards)) {
+      const want = slide.cards.map((k) => String(k).toLowerCase());
+      const match = (it, w) => { const k = it.key.toLowerCase(), tail = k.split('::')[1] || ''; return k === w || tail === w || tail.slice(tail.indexOf(':') + 1) === w; };
+      all = [...new Set(want.map((w) => all.find((it) => match(it, w))).filter(Boolean))];
+      return all;
+    }
     if (!L.order?.length) return all;
     const idx = new Map(L.order.map((k, i) => [k, i]));
     const fresh = all.filter((it) => !idx.has(it.key) && it.kind === 'panel');       // new agent panels show up on top
@@ -257,6 +297,184 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   }
 
   let vtSeq = 0;
+  // ------------------------------------------------------------- flip: the sheet behind a card
+  function fillBack(n, back, withHistory) {
+    const keep = back.querySelector('.lv-back-hist')?.innerHTML || '';
+    back.innerHTML = backSide(n.item, { doc });
+    back.querySelector('.lv-back-hist').innerHTML = keep;
+    if (!withHistory) return;
+    const it = n.item;
+    const q = it.kind === 'table' && !it.key.endsWith('::range') ? `table=${encodeURIComponent(it.name)}`
+      : it.kind === 'kpi' ? `cell=${encodeURIComponent(it.ch.value.includes('!') ? it.ch.value : it.sheet + '!' + it.ch.value)}`
+        : it.kind === 'stat' ? `cell=${encodeURIComponent(it.sheet + '!' + it.value.A)}` : null;
+    if (!q) return;
+    fetch(`/api/history?${q}&format=json`).then((r) => r.json()).then((list) => {
+      const el = back.querySelector('.lv-back-hist');
+      if (!el || !list.length) return;
+      el.innerHTML = '<div class="lv-back-sub">recent changes</div>' + list.slice(0, 8).map((x) => `<div><span>${new Date(x.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${escH(x.who || x.by)}</span> ${escH(x.at || '')} ${x.moved ? 'moved ' + escH(x.moved) : x.table ? 'table ' + escH(x.table) : `${escH(x.old || '∅')} → <b>${escH(x.new || '∅')}</b>`}</div>`).join('');
+    }).catch(() => {});
+  }
+  const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+  // ------------------------------------------------------------- adaptive ink: dark text on light backgrounds, per card
+  function adaptInk() {
+    const lum = sampleBackground(root);
+    for (const n of nodes.values()) {
+      const L = lum(n.el);
+      if (L == null) continue;
+      const dark = n.el.classList.contains('lv-ink-dark') ? L > 0.5 : L > 0.6;   // hysteresis
+      if (dark !== n.el.classList.contains('lv-ink-dark')) {
+        n.el.classList.toggle('lv-ink-dark', dark);
+        if (n.item.kind === 'chart') paintChart(n, n.item);
+      }
+    }
+    const t = $('.lv-slidetext');
+    if (t.childElementCount) { const L = lum(t); if (L != null) t.classList.toggle('lv-ink-dark', L > 0.6); }
+  }
+  const inkTimer = setInterval(() => { if (!document.hidden) adaptInk(); }, 1500);
+
+  // ------------------------------------------------------------- slides: views become a presentation
+  let playing = false, slideIdx = -1, slideTimer = null;
+  const slides = () => doc.live?.slides || [];
+  function renderSlideText() {
+    const t = $('.lv-slidetext');
+    const has = slide && (slide.title || slide.text);
+    const solo = has && Array.isArray(slide.cards) && slide.cards.length === 0;
+    root.classList.toggle('lv-slide-solo', !!solo);
+    stage.classList.toggle('lv-titled', !!has && !solo);
+    if (!has) { t.innerHTML = ''; return; }
+    const html = `${slide.title ? `<h1>${escH(slide.title)}</h1>` : ''}${slide.text ? `<div class="lv-md">${mdLite(slide.text)}</div>` : ''}`;
+    if (t.dataset.html !== html) { t.innerHTML = html; t.dataset.html = html; t.classList.remove('lv-reveal'); void t.offsetWidth; t.classList.add('lv-reveal'); }
+  }
+  function showSlide(i, quiet) {
+    const list = slides();
+    if (!list.length) return;
+    slideIdx = (i + list.length) % list.length;
+    const sl = list[slideIdx];
+    const apply = () => { try { applySlide(); } catch (e) { console.error('slide', e); } };
+    const applySlide = () => {
+      slide = sl;
+      if (sl.sheet && doc.sheets.some((x) => sameName(x.name, sl.sheet))) sheetName = doc.sheets.find((x) => sameName(x.name, sl.sheet)).name;
+      mode = sl.mode === 'sheet' ? 'sheet' : sl.mode === 'auto' ? 'auto' : mode;
+      revealed.clear();
+      applyTheme();
+      render();
+      scroller.scrollTo(0, 0);
+      setFocus(sl.focus || null, true);
+      renderDots();
+      renderSlidePanel();
+    };
+    if (quiet) apply(); else transition(apply);
+    clearTimeout(slideTimer);
+    const bar = $('.lv-progress i');
+    bar.getAnimations?.().forEach((a) => a.cancel());
+    if (playing && sl.duration > 0) {
+      bar.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: sl.duration * 1000, easing: 'linear', fill: 'forwards' });
+      slideTimer = setTimeout(() => next(1), sl.duration * 1000);
+    }
+  }
+  function next(d) { if (slides().length) showSlide(slideIdx + d); }
+  function play(from = 0) {
+    if (!slides().length) return;
+    playing = true;
+    root.classList.add('lv-playing');
+    showSlide(from);
+  }
+  function stopPlaying() {
+    playing = false;
+    clearTimeout(slideTimer);
+    root.classList.remove('lv-playing');
+    $('.lv-progress i').getAnimations?.().forEach((a) => a.cancel());
+    renderDots();
+  }
+  function leaveSlide() { stopPlaying(); slide = null; slideIdx = -1; applyTheme(); render(); renderSlidePanel(); }
+  function renderDots() {
+    const d = $('.lv-dots');
+    d.innerHTML = playing ? slides().map((_, i) => `<i class="${i === slideIdx ? 'on' : ''}"></i>`).join('') + `<span>${slideIdx + 1} / ${slides().length}</span>` : '';
+  }
+  function captureView() {
+    let n = slides().length + 1;
+    while (slides().some((x) => x.id === 's' + n)) n++;
+    const f = focusKey ? nodes.get(focusKey)?.item : null;
+    const title = f ? (f.ch?.title || f.name || f.label || '') : mode === 'auto' ? 'Overview' : sh().name;
+    return { op: 'slide', id: 's' + n, title, sheet: sh().name, mode, focus: focusKey ? focusKey.split('::')[1] : null, duration: 8 };
+  }
+  function renderSlidePanel() {
+    const p = $('.lv-slides');
+    if (!root.classList.contains('lv-slides-open')) return;
+    const list = slides();
+    p.innerHTML = `<div class="lv-sl-head"><b>Slides</b><span>${list.length}</span>
+        <button class="lv-btn" data-s="add" title="Add the current view as a slide">＋ This view</button>
+        <button class="lv-btn" data-s="text" title="A slide with just a title and text">＋ Text</button>
+        <button class="lv-btn on" data-s="play">▶ Play</button></div>
+      <div class="lv-sl-list">${list.map((x, i) => `
+        <div class="lv-sl ${i === slideIdx ? 'on' : ''}" data-id="${escH(x.id)}" data-i="${i}">
+          <div class="lv-sl-n">${i + 1}</div>
+          <div class="lv-sl-body">
+            <div class="lv-sl-title" contenteditable="plaintext-only" data-k="title" spellcheck="false">${escH(x.title || '')}</div>
+            <div class="lv-sl-text" contenteditable="plaintext-only" data-k="text" spellcheck="false">${escH(x.text || '')}</div>
+            <div class="lv-sl-meta">${escH(x.sheet || '')} · ${x.mode === 'auto' ? 'combined' : 'sheet'}${x.focus ? ' · ' + escH(x.focus) : ''}${Array.isArray(x.cards) ? ` · ${x.cards.length} cards` : ''}</div>
+            <div class="lv-sl-bg">
+              <input data-k="image" placeholder="background image / GIF / SVG url — or drop a file" value="${escH(x.bg?.image || '')}">
+              <select data-k="filter">${['none', 'dither', 'halftone'].map((f) => `<option ${(x.bg?.filter || 'none') === f ? 'selected' : ''}>${f}</option>`).join('')}</select>
+              <input data-k="duration" type="number" min="0" step="1" value="${x.duration ?? 8}" title="seconds (0 = manual)">s
+            </div>
+          </div>
+          <div class="lv-sl-tools"><button data-s="go" title="Show">▸</button><button data-s="up" title="Move up">↑</button><button data-s="down" title="Move down">↓</button><button data-s="del" title="Delete">✕</button></div>
+        </div>`).join('') || '<div class="lv-sl-empty">Arrange a view (sheet, combined, focus…), then “＋ This view”. Slides can have a title, text and a background image, GIF or SVG.</div>'}</div>`;
+  }
+  $('.lv-slides').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-s]');
+    if (!b) return;
+    const row = b.closest('.lv-sl'), id = row?.dataset.id, i = row ? +row.dataset.i : -1;
+    switch (b.dataset.s) {
+      case 'add': submit([captureView()]); break;
+      case 'text': { const o = captureView(); submit([{ ...o, title: 'Title', text: 'Write something **bold**\n- and a bullet', cards: [], mode: 'auto', focus: null }]); break; }
+      case 'play': play(0); root.classList.remove('lv-slides-open'); break;
+      case 'go': showSlide(i); break;
+      case 'up': if (i > 0) submit([{ op: 'slide', id, index: i - 1 }]); break;
+      case 'down': submit([{ op: 'slide', id, index: i + 1 }]); break;
+      case 'del': submit([{ op: 'removeSlide', id }]); if (slideIdx === i) leaveSlide(); break;
+    }
+    renderSlidePanel();
+  });
+  $('.lv-slides').addEventListener('focusout', (e) => {
+    const k = e.target.dataset?.k, row = e.target.closest('.lv-sl');
+    if (!k || !row || (k !== 'title' && k !== 'text')) return;
+    const sl = slides().find((x) => x.id === row.dataset.id);
+    const v = e.target.textContent;
+    if (sl && (sl[k] || '') !== v) { submit([{ op: 'slide', id: sl.id, [k]: v || null }]); if (slide?.id === sl.id) { slide = slides().find((x) => x.id === sl.id); renderSlideText(); } }
+  });
+  $('.lv-slides').addEventListener('change', (e) => {
+    const k = e.target.dataset?.k, row = e.target.closest('.lv-sl');
+    if (!row || !['image', 'filter', 'duration'].includes(k)) return;
+    const sl = slides().find((x) => x.id === row.dataset.id);
+    if (!sl) return;
+    const bg = { ...(sl.bg || {}) };
+    if (k === 'image') { if (e.target.value.trim()) bg.image = e.target.value.trim(); else delete bg.image; }
+    if (k === 'filter') { if (e.target.value === 'none') delete bg.filter; else bg.filter = e.target.value; }
+    submit([k === 'duration' ? { op: 'slide', id: sl.id, duration: +e.target.value || 0 } : { op: 'slide', id: sl.id, bg: Object.keys(bg).length ? bg : null }]);
+    if (slide?.id === sl.id) showSlide(slideIdx, true);
+  });
+  $('.lv-slides').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && e.target.dataset?.k === 'title') { e.preventDefault(); e.target.blur(); } });
+  $('.lv-slides').addEventListener('dragover', (e) => { if (e.target.closest('.lv-sl')) e.preventDefault(); });
+  $('.lv-slides').addEventListener('drop', async (e) => {
+    const row = e.target.closest('.lv-sl');
+    const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
+    if (!row || !f) return;
+    e.preventDefault();
+    const { url } = await (await fetch('/api/assets', { method: 'POST', headers: { 'content-type': f.type }, body: f })).json();
+    const sl = slides().find((x) => x.id === row.dataset.id);
+    submit([{ op: 'slide', id: sl.id, bg: { ...(sl.bg || {}), image: url } }]);
+    renderSlidePanel();
+    if (slide?.id === sl.id) showSlide(slideIdx, true);
+  });
+
+  // ------------------------------------------------------------- people in Live
+  function showPeople(list) {
+    const el = $('.lv-people');
+    el.innerHTML = (list || []).filter((p) => !p.me).slice(0, 8).map((p) => `<b style="background:${escH(p.color || '#888')}" title="${escH(p.name)}${p.live ? ' — in Live' : ''}">${escH((p.name || '?').slice(0, 1).toUpperCase())}</b>`).join('');
+  }
   // ------------------------------------------------------------- reveal cards as they scroll into view
   const revealed = new Set();
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
@@ -308,6 +526,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         open: true, mode, sheet: sh().name, focus: focusKey, flow: doc.live?.flow || 'vertical',
         vw: Math.round(v.width), vh: Math.round(v.height), scroll: [scroller.scrollLeft, scroller.scrollTop], cards,
       };
+      ctx.livePresence?.(closing ? null : { mode, sheet: sh().name, focus: focusKey, slide: playing ? slideIdx + 1 : null });
       fetch('/api/live-state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
     };
     if (closing) send(); else stateTimer = setTimeout(send, 400);
@@ -451,10 +670,19 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (card) setFocus(focusKey === card.dataset.key ? null : card.dataset.key);
   });
   stage.addEventListener('click', (e) => {
+    const fb = e.target.closest('.lv-flip');
+    if (fb) {
+      e.stopPropagation();
+      const n = nodes.get(fb.parentElement.dataset.key);
+      if (n) flip(n.el, (back) => fillBack(n, back, true));
+      return;
+    }
+    if (playing && !e.target.closest('.lv-card, [contenteditable]')) { next(1); return; }
     const b = e.target.closest('.lv-zoom');
     if (b) { e.stopPropagation(); const k = b.parentElement.dataset.key; setFocus(focusKey === k ? null : k); }
   });
   function render() {
+    renderSlideText();   // first: it decides whether the stage is visible at all (measurements need it)
     const auto = mode === 'auto';
     const items = auto ? autoItems() : model();
     const hflow = auto && doc.live?.flow === 'horizontal';
@@ -492,6 +720,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     for (const [k, n] of nodes) if (!seen.has(k)) { n.el.remove(); nodes.delete(k); }
     if (auto && !hflow) masonry(items); else if (!auto) reflow(items);
     observeReveal();
+    renderSlideText();
+    if (auto && doc.live?.links !== false && !Array.isArray(slide?.cards)) drawRelations(stage, findRelations(items), nodes);
+    else stage.querySelector(':scope > svg.lv-links')?.remove();
+    for (const n of nodes.values()) { const b = n.el.querySelector(':scope > .lv-back'); if (b) fillBack(n, b, false); }
+    requestAnimationFrame(adaptInk);
     reportState();
     if (focusKey && !nodes.has(focusKey)) setFocus(null, true);
     for (const n of nodes.values()) n.el.classList.toggle('lv-focus', n.item.key === focusKey);
@@ -544,6 +777,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     el.dataset.key = it.key;
     if (it.kind !== 'text' && it.kind !== 'slot') queueMicrotask(() => { const z = document.createElement('button'); z.className = 'lv-zoom'; z.title = 'Focus (double-click)'; z.textContent = '⤢'; el.append(z); });
     if (it.kind !== 'text') queueMicrotask(() => { const h = document.createElement('div'); h.className = 'lv-rs'; h.title = 'Drag to resize'; el.append(h); });
+    if (it.kind !== 'text' && it.kind !== 'slot' && it.kind !== 'img') queueMicrotask(() => { const f = document.createElement('button'); f.className = 'lv-flip'; f.title = 'Flip to the sheet side'; f.textContent = '⟲'; el.append(f); });
     if (it.kind === 'panel') {
       el.className = 'lv-card lv-panel';
       el.innerHTML = '<div class="lv-label"></div><div class="lv-pv"></div><div class="lv-md"></div><img class="lv-pimg" alt="" draggable="false">';
@@ -706,7 +940,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     g.clearRect(0, 0, w, h);
     const data = n.tween ? current(n) : n.data;
     const zz = it.key === focusKey ? Math.min(2.6, Math.max(1, h / 260)) : Math.min(1.6, scale * 1.05);
-    drawChart(g, { x: 0, y: 0, w, h }, { ...it.ch, title: '' }, data, zz, false, 'glass');
+    n.inkDark = n.el.classList.contains('lv-ink-dark');
+    drawChart(g, { x: 0, y: 0, w, h }, { ...it.ch, title: '' }, data, zz, false, n.inkDark ? 'glassDark' : 'glass');
   }
   let raf = 0;
   function tick() {
@@ -793,6 +1028,9 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     fl.textContent = doc.live?.flow === 'horizontal' ? '↔' : '↕';
     fl.style.display = root.querySelector('[data-a=space]').style.display = mode === 'auto' ? '' : 'none';
     root.querySelector('[data-a=reveal]').classList.toggle('on', doc.live?.reveal !== false);
+    root.querySelector('[data-a=links]').classList.toggle('on', doc.live?.links !== false);
+    root.querySelector('[data-a=links]').style.display = mode === 'auto' ? '' : 'none';
+    renderSlidePanel();
     const th = $('.lv-themes');
     if (!th.childElementCount) {
       for (const [k, p] of Object.entries(PRESETS)) {
@@ -805,9 +1043,14 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       applyTheme();
     }
   }
+  // touching the bar (modes, sheets, themes…) leaves the slide and returns to free browsing
+  root.querySelector('.lv-bar').addEventListener('click', (e) => {
+    if (!slide || !e.target.closest('button') || e.target.closest('[data-a=slides], [data-a=exit]')) return;
+    stopPlaying(); slide = null; slideIdx = -1; applyTheme(); render(); renderSlidePanel();
+  }, true);
   root.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => {
     if (mode === b.dataset.m) return;
-    transition(() => { mode = b.dataset.m; try { localStorage.setItem('lotus.liveMode', mode); } catch {} render(); scroller.scrollTop = 0; });
+    transition(() => { mode = b.dataset.m; try { localStorage.setItem('spread.liveMode', mode); } catch {} render(); scroller.scrollTop = 0; });
   }));
   // Cross-highlight: hovering a value lights up the same value in every other card -> tables connect visually.
   const norm = (t) => t.trim().toLowerCase();
@@ -836,6 +1079,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     while ((doc.live?.slots || []).some((x) => x.id === 'space' + i)) i++;
     transition(() => submit([{ op: 'liveLayout', slots: [...(doc.live?.slots || []), { id: 'space' + i, span: 1, h: 180 }] }]));
   };
+  root.querySelector('[data-a=links]').onclick = () => { submit([{ op: 'liveLayout', links: doc.live?.links === false ? null : false }]); render(); };
+  root.querySelector('[data-a=slides]').onclick = () => { root.classList.toggle('lv-slides-open'); renderSlidePanel(); };
   root.querySelector('[data-a=exit]').onclick = close;
   root.querySelector('[data-a=fs]').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen?.());
   let idle;
@@ -843,9 +1088,17 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   root.addEventListener('mousemove', wake);
   wake();
   const onKey = (e) => {
-    if (e.key !== 'Escape' || document.activeElement?.dataset?.a) return;
+    const ae = document.activeElement;
+    const typing = root.contains(ae) && (ae.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(ae.tagName));
+    if (playing && !typing) {
+      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); next(1); return; }
+      if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); next(-1); return; }
+    }
+    if (e.key !== 'Escape' || typing) return;
     e.preventDefault();
-    if (focusKey) setFocus(null); else close();
+    if (playing || slide) leaveSlide();
+    else if (focusKey) setFocus(null);
+    else close();
   };
   document.addEventListener('keydown', onKey, true);
   const onResize = () => render();
@@ -856,10 +1109,12 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     document.removeEventListener('keydown', onKey, true);
     removeEventListener('resize', onResize);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    try { const u = new URL(location.href); ['live', 'mode', 'focus', 'kiosk'].forEach((k) => u.searchParams.delete(k)); history.replaceState(null, '', u); } catch {}
+    try { const u = new URL(location.href); ['live', 'mode', 'focus', 'kiosk', 'slides'].forEach((k) => u.searchParams.delete(k)); history.replaceState(null, '', u); } catch {}
     try { mount?.dispose(); } catch {}
     reportState(true);
     io?.disconnect();
+    clearInterval(inkTimer);
+    clearTimeout(slideTimer);
     root.classList.add('lv-out');
     setTimeout(() => root.remove(), 260);
     onClose?.(sheetName);
@@ -870,13 +1125,17 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   if (kiosk) root.classList.add('lv-kiosk');
   render();
   if (startFocus) setFocus(startFocus, true);
+  if (startSlide) play(Math.max(0, startSlide - 1));
   syncUrl();
   return {
     update: () => render(),
     close,
     get sheet() { return sheetName; },
     /** Remote control (agent / URL): { sheet?, mode?, focus? } */
+    people: showPeople,
     present(o) {
+      if (o.slide) { play(Math.max(0, (+o.slide || 1) - 1)); return; }
+      if (playing || slide) { stopPlaying(); slide = null; }
       transition(() => {
         if (o.mode) mode = o.mode === 'auto' ? 'auto' : 'sheet';
         if (o.sheet && doc.sheets.some((s) => sameName(s.name, o.sheet))) { sheetName = doc.sheets.find((s) => sameName(s.name, o.sheet)).name; applyTheme(); }

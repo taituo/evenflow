@@ -1,9 +1,9 @@
 ---
-name: lotus-456
-description: Work with the user in their live Lotus 456 spreadsheet (A1 grid, formulas, named tables, SQL, charts, Live dashboards). Use when the user refers to "the sheet", a table by name, cell coordinates like C23, a dashboard, or asks what they changed.
+name: spread
+description: Work with the user in their live Spread spreadsheet (A1 grid, formulas, named tables, SQL, charts, Live dashboards). Use when the user refers to "the sheet", a table by name, cell coordinates like C23, a dashboard, or asks what they changed.
 ---
 
-# Lotus 456 — agent skill
+# Spread — agent skill
 
 The user has a full-screen spreadsheet open in a browser. You both edit the same workbook; every edit is versioned.
 Read **only what changed**, write **small, precise** edits, and prefer **named tables** over raw coordinates.
@@ -14,7 +14,7 @@ Server: `$CANVAS_URL` (default `http://127.0.0.1:3210`). CLI: `bin/cm.mjs` (alia
 
 1. First contact: `cm overview` — workbooks, sheets, used ranges, named tables (with columns), charts, the user's selection.
 2. Before every reply: `cm changes` — only edits since your last call; your own are filtered out; the cursor is kept in
-   `~/.lotus456-cursor`. After a long gap use `cm changes --net` (net effect per cell).
+   `~/.spread-cursor`. After a long gap use `cm changes --net` (net effect per cell).
 3. Read narrowly: `cm read @Tasks` (a table as records) or `cm read Budget!A1:E6`. Never dump whole sheets "just in case".
 4. Write. Every write echoes what changed and which formulas recalculated.
 
@@ -100,9 +100,32 @@ cm slot logo --image /assets/logo.png --span 1 --h 160   # reserve space (the us
 cm layout '{"flow":"horizontal"}'         # also: order, spans, hidden, reveal
 cm ops '[{"op":"view","sheet":"Dashboard","theme":"ocean","font":"rounded"}]'
 ```
+Slides (a presentation made of Live views — build them when the user asks for a deck / a show):
+```
+cm slides
+cm slide add intro '{"title":"Week 42","text":"**3 open** tasks","cards":[]}'          # cards: [] = title slide
+cm slide add kpis '{"title":"Costs","sheet":"Dashboard","mode":"auto","cards":["kpiCost","parts"],"duration":8}'
+cm slide add hero '{"title":"Robot","bg":{"image":"/assets/robot.gif"},"cards":[]}'      # image / GIF / SVG background
+#   bg.filter: "dither" | "halftone" runs the image through a shader;  bg.theme picks a shader theme instead
+cm slide rm kpis
+cm present --slide 1                          # play on the user's screen (only when asked)
+```
+Card ids for `cards`/`focus`: chart ids, table names, `stat:A1`, panel ids. Live text adapts to the background
+(dark text on bright images) automatically — you don't pick colors.
+
 Themes: aurora nebula ocean ember forest ink grain neuro warp smoke rays swirl blobs. Fonts: display sans serif mono
 rounded condensed geometric hand. For a sheet-layout dashboard, put titles in big-font cells and charts/KPIs where they
 should appear; hide gridlines with `{"op":"view","sheet":"Dashboard","grid":false}`.
+
+## People and history
+
+Several humans may be connected. `cm people` shows who is where (sheet, selection, Live/slide). The change feed shows
+`by user (Name)`. Before changing a cell that someone else is editing right now, prefer a `note`.
+```
+cm history Project!C8        # every change to that cell, following moves and row inserts
+cm history @Tasks            # every change inside a table, plus its structural changes
+```
+Use history to answer "who changed this / what was it before" instead of guessing.
 
 ## Voice and coordinates
 
@@ -147,8 +170,10 @@ Errors: `#REF! #DIV/0! #NAME? #VALUE! #N/A #CYCLE! #ERROR!`. Checks/validation =
 | `POST /api/assets` (raw image body) | → `{url}` for `=IMAGE(url)` |
 | `POST /api/commit {message}` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore {commit}` | milestones |
 | `POST /api/focus {range, label}` | highlight where you work |
-| `POST /api/present {sheet, mode?, focus?, off?}` · `GET /api/live` | drive Live · read what it shows |
+| `POST /api/present {sheet, mode?, focus?, slide?, off?}` · `GET /api/live` | drive Live / slides · read what it shows |
 | `POST /api/docs {type:"sheet"\|"text", title}` | new workbook / notes |
+| `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history (move-aware) |
+| `GET /api/presence` | who is connected and where |
 | `GET /api/events` | SSE stream of every batch |
 
 Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows {at,count}` · `insertCols|deleteCols {at:"C",count}` ·
@@ -158,5 +183,6 @@ Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows 
 tables: `table {name,range}` · `deleteTable` · `renameTable {name,newName}` · `appendRows {table,rows}` ·
 `updateRows {table, key|match|rows, set}` · `removeRows {table, key|match|rows}` · `addColumn {table,name,values?}` ·
 charts: `addChart {type, range|table(+x,y)|value, title, at, dx, dy, w, h}` · `updateChart {id,…}` · `deleteChart {id}` ·
-live: `liveLayout {order, spans, hidden, flow, reveal, slots}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}`.
+live: `liveLayout {order, spans, hidden, flow, reveal, slots, links}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}` ·
+`slide {id, index?, title, text, sheet, mode, focus, cards, bg:{image, filter, theme}, duration}` · `removeSlide {id}`.
 Text docs: `setText {text}` · `append {text}`. Every sheet op takes an optional `sheet`; cell keys may carry a sheet prefix.

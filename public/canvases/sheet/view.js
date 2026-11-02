@@ -40,6 +40,8 @@ const TEMPLATE = `
   </div>
 </div>`;
 
+const rgba = (hex, a) => { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h.slice(0, 6), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+
 export function mount(root, ctx) {
   root.innerHTML = TEMPLATE;
   const $ = (s) => root.querySelector(s);
@@ -58,7 +60,8 @@ export function mount(root, ctx) {
   let rowsExt = 0, colsExt = 0, colPre = new Float64Array(1), rowPre = new Float64Array(1);
   let undoStack = [], redoStack = [];
   let clip = null;            // { sheet, R, cut, text, cells }
-  let flashes = [];           // { sheet, R, t0 }
+  let flashes = [];           // { sheet, R, t0, color? }
+  let others = [];            // other people in this workbook: { name, color, sheet, ranges, active }
   let agentBox = null;        // { sheet, R, label, t0 }
   const agentSheets = new Set();
   let diffCells = null;       // Map sheet -> Set(addr)
@@ -366,9 +369,34 @@ export function mount(root, ctx) {
       if (!sameName(f.sheet, s.name)) continue;
       const r = rectOf(f.R);
       paneClip(f.R);
-      g.fillStyle = `rgba(147,52,230,${0.32 * (1 - (now - f.t0) / 1600)})`;
+      g.fillStyle = f.color ? rgba(f.color, 0.32 * (1 - (now - f.t0) / 1600)) : `rgba(147,52,230,${0.32 * (1 - (now - f.t0) / 1600)})`;
       g.fillRect(r.x, r.y, r.w, r.h);
       g.restore();
+    }
+    // other people: their selection (tinted) and active cell with a name tag
+    for (const p of others) {
+      if (!p.sheet || !sameName(p.sheet, s.name)) continue;
+      for (const rs of p.ranges || []) {
+        const R = parseRange(rs);
+        if (!R || (R.c1 === R.c2 && R.r1 === R.r2)) continue;
+        const r = rectOf(R);
+        paneClip(R);
+        g.fillStyle = rgba(p.color || '#888', 0.08);
+        g.fillRect(r.x, r.y, r.w, r.h);
+        g.restore();
+        strokeRange(R, rgba(p.color || '#888', 0.55), 1);
+      }
+      const A = p.active && parseRange(p.active);
+      if (!A) continue;
+      const r = strokeRange(A, p.color || '#888', 2);
+      g.font = `600 ${10}px system-ui, sans-serif`;
+      const tw = g.measureText(p.name).width + 8;
+      g.fillStyle = p.color || '#888';
+      const ty = A.r1 === 0 ? r.y + r.h : r.y - 14;   // first row: tag below the cell
+      g.fillRect(r.x + r.w - tw, ty, tw, 14);
+      g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(p.name, r.x + r.w - tw + 4, ty + 7);
+      g.textBaseline = 'alphabetic';
     }
     if (agentBox && now - agentBox.t0 < 10000 && sameName(agentBox.sheet, s.name)) {
       const r = strokeRange(agentBox.R, C.agent, 2, [5, 3]);
@@ -829,6 +857,7 @@ export function mount(root, ctx) {
       submit: (ops) => submit(ops),
       onClose: (name) => { live = null; if (!sameName(name, sheetName)) switchSheet(name); ed.focus(); requestDraw(); },
     });
+    live?.people?.(others);
   }
   function refresh() {
     live?.update();
@@ -1041,6 +1070,7 @@ export function mount(root, ctx) {
       b.className = 'sv-tab' + (sameName(s.name, sheetName) ? ' on' : '');
       b.textContent = s.name;
       if (agentSheets.has(s.name.toLowerCase())) b.insertAdjacentHTML('beforeend', '<span class="dot" title="agent changed this sheet"></span>');
+      for (const p of others.filter((x) => x.sheet && sameName(x.sheet, s.name)).slice(0, 4)) b.insertAdjacentHTML('beforeend', `<span class="pdot" style="background:${p.color}" title="${String(p.name).replace(/"/g, '')} is here"></span>`);
       b.onmousedown = (e) => { if (!b.isContentEditable) e.preventDefault(); };
       b.onclick = () => { if (!b.isContentEditable) switchSheet(s.name, isFormulaEdit()); };
       b.ondblclick = () => renameTab(b, s);
@@ -1729,10 +1759,27 @@ export function mount(root, ctx) {
       { label: 'Clear contents', kbd: 'Del', action: clearSelection },
       '-',
       { label: hasNote ? 'Edit note' : 'Insert note', action: () => noteEditor(A) },
+      { label: `🕘 History of ${A}`, action: () => showHistory(e, `cell=${encodeURIComponent(quoteSheet(sh().name) + '!' + A)}`, `${sh().name}!${A}`) },
+      ...(tab ? [{ label: `🕘 History of table ${tab.t.name}`, action: () => showHistory(e, `table=${encodeURIComponent(tab.t.name)}`, `table ${tab.t.name}`) }] : []),
       ...(hasNote ? [{ label: 'Remove note', action: () => submit([{ op: 'note', sheet: sh().name, cell: A, text: null }]) }] : []),
       { label: `Copy reference ${quoteSheet(sh().name)}!${rangeToString(R)}`, action: () => navigator.clipboard?.writeText(`${quoteSheet(sh().name)}!${rangeToString(R)}`) },
     ]);
   });
+
+  async function showHistory(anchorEvt, q, title) {
+    let list = [];
+    try { list = await ctx.get(`/api/history?doc=${encodeURIComponent(ctx.docId)}&${q}&format=json`); } catch (er) { return ctx.toast(er.message, true); }
+    const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    ctx.popover({ left: anchorEvt.clientX, bottom: anchorEvt.clientY }, (p) => {
+      p.classList.add('histpop');
+      p.innerHTML = `<div class="hp-h">🕘 ${esc(title)} <span>${list.length} change${list.length === 1 ? '' : 's'}</span></div>` + (list.length ? list.slice(0, 40).map((x) => {
+        const who = x.who || x.by;
+        const when = new Date(x.ts).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const what = x.moved ? `moved ${esc(x.moved)}` : x.table ? `table ${esc(x.table)}` : `${x.at && !title.endsWith(x.at.split('!')[1]) ? `<code>${esc(x.at)}</code> ` : ''}${esc(x.old ?? '∅') || '∅'} → <b>${esc(x.new ?? '∅') || '∅'}</b>${x.t && q.startsWith('table') ? ` <em>${esc(x.t)}</em>` : ''}`;
+        return `<div class="hp-r"><span class="hp-v">v${x.v}</span><span class="hp-w ${x.by === 'user' ? '' : 'agent'}">${esc(who)}</span><span class="hp-t">${when}</span><div class="hp-x">${what}</div></div>`;
+      }).join('') : '<div class="hp-empty">No recorded changes (the log keeps recent history).</div>');
+    });
+  }
 
   function askName(anchorEvt, placeholder, value, done) {
     const at = anchorEvt?.getBoundingClientRect ? anchorEvt : { left: anchorEvt.clientX, bottom: anchorEvt.clientY };
@@ -1817,24 +1864,31 @@ export function mount(root, ctx) {
     reload() { undoStack = []; redoStack = []; refresh(); },
     resized: () => setTimeout(resize, 0),
     present(o) { if (o.off) return live?.close(); startLive(o); },
+    presence(list) {
+      others = (list || []).map((p) => ({ ...p, name: p.name || '?' }));
+      live?.people?.(list);
+      renderTabs();
+      requestDraw();
+    },
     activeRef: () => `${quoteSheet(sh().name)}!${addr(sel.active.c, sel.active.r)}`,
     remote(evt) {
       live?.update();
       engine.invalidate();
       if (!doc.sheets.find((s) => sameName(s.name, sheetName))) { sheetName = doc.sheets[0].name; sel = freshSel(); }
       rebuild();
-      if (evt.by !== 'user') {
+      if (evt.by !== 'user' || evt.who) {
         const t0 = performance.now();
+        const human = evt.by === 'user';
         let last = null;
         for (const t of evt.touched || []) {
           const R = parseRange(t.range);
           if (!R) continue;
-          flashes.push({ sheet: t.sheet, R, t0 });
+          flashes.push({ sheet: t.sheet, R, t0, color: human ? evt.color || '#888' : null });
           last = { sheet: t.sheet, R };
-          if (!sameName(t.sheet, sheetName)) agentSheets.add(String(t.sheet).toLowerCase());
+          if (!human && !sameName(t.sheet, sheetName)) agentSheets.add(String(t.sheet).toLowerCase());
         }
         if (flashes.length > 400) flashes = flashes.slice(-400);
-        if (last) {
+        if (last && !human) {
           const all = (evt.touched || []).filter((t) => sameName(t.sheet, last.sheet)).map((t) => parseRange(t.range)).filter(Boolean);
           const U = all.reduce((a, b) => ({ c1: Math.min(a.c1, b.c1), r1: Math.min(a.r1, b.r1), c2: Math.max(a.c2, b.c2), r2: Math.max(a.r2, b.r2) }));
           agentBox = { sheet: last.sheet, R: U, label: evt.by, t0 };
