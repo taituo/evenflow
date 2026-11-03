@@ -57,6 +57,7 @@ cm fmt A1:E1 '{"b":true,"fill":"#fff2cc","fs":16,"ff":"serif"}'   # b i u s fill
 cm border B6:E11 outer thick '#1a73e8'             # all|inner|horizontal|vertical|outer|left|top|right|bottom|clear
 cm merge B2:E2 | cm unmerge B2:E2
 cm note B7 "Is this the 2025 price?"               # ask the user something *in the cell*
+cm traffic Budget!D2:D5 '<20:green' 'between 20 60:amber' '>60:red'   # traffic lights (also '=done:green', ':#hex', 'off')
 cm image B2 photo.png                              # =IMAGE("/assets/…")
 cm focus B2:B9 "checking quantities"               # purple box on the user's grid while you work
 ```
@@ -79,7 +80,7 @@ cm json Tasks | cm put Tasks rows.json [Sheet!B2]
 ```
 cm chart column B6:C10 --at K2 --title "Prices"        # column | bar | line | area | pie | kpi
 cm chart pie @StatusMix --title "Task status"           # table source (--x label column, --y value columns)
-cm chart kpi Project!C12 --title "Open tasks" --at B5
+cm chart kpi Project!C12 --title "Open tasks" --at B5 [--size small] [--value2 C13 --label2 cost]   # square tile / two figures
 cm chart-show status | cm chart-set status type=bar w=500 | cm chart-rm status
 cm export Dashboard md                                   # sheet → document (headings, tables, charts, KPIs)
 ```
@@ -112,6 +113,16 @@ cm present --slide 1                          # play on the user's screen (only 
 ```
 Card ids for `cards`/`focus`: chart ids, table names, `stat:A1`, panel ids. Live text adapts to the background
 (dark text on bright images) automatically — you don't pick colors.
+
+Remote control — every open Live view is a *screen* (a TV at `/?screen=tv`, the user's laptop…):
+```
+cm screens                                 # which screens exist and what each shows
+cm present next --screen tv                # next slide — or, with no slides, next card (carousel)
+cm present toggle|play|pause|prev|unfocus [--screen tv]
+cm live                                    # what the (most recent) screen shows; GET /api/live?screen=tv
+```
+Change effects (what values do on screen when data changes): `cm layout '{"fx":"scramble"}'` — morph (default),
+scramble, vapor, glow, none. Your edits animate: keep batches meaningful.
 
 Themes: aurora nebula ocean ember forest ink grain neuro warp smoke rays swirl blobs. Fonts: display sans serif mono
 rounded condensed geometric hand. For a sheet-layout dashboard, put titles in big-font cells and charts/KPIs where they
@@ -170,7 +181,7 @@ Errors: `#REF! #DIV/0! #NAME? #VALUE! #N/A #CYCLE! #ERROR!`. Checks/validation =
 | `POST /api/assets` (raw image body) | → `{url}` for `=IMAGE(url)` |
 | `POST /api/commit {message}` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore {commit}` | milestones |
 | `POST /api/focus {range, label}` | highlight where you work |
-| `POST /api/present {sheet, mode?, focus?, slide?, off?}` · `GET /api/live` | drive Live / slides · read what it shows |
+| `POST /api/present {sheet, mode?, focus?, slide?, action?, screen?, off?}` · `GET /api/live[?screen=]` · `GET /api/screens` | drive Live / slides / remote actions · read what a screen shows |
 | `POST /api/docs {type:"sheet"\|"text", title}` | new workbook / notes |
 | `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history (move-aware) |
 | `GET /api/presence` | who is connected and where |
@@ -183,6 +194,7 @@ Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows 
 tables: `table {name,range}` · `deleteTable` · `renameTable {name,newName}` · `appendRows {table,rows}` ·
 `updateRows {table, key|match|rows, set}` · `removeRows {table, key|match|rows}` · `addColumn {table,name,values?}` ·
 charts: `addChart {type, range|table(+x,y)|value, title, at, dx, dy, w, h}` · `updateChart {id,…}` · `deleteChart {id}` ·
-live: `liveLayout {order, spans, hidden, flow, reveal, slots, links}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}` ·
+traffic lights: `cond {range, rules:[{when, value, value2?, light|style}], id?}` · `removeCond {id | range}` ·
+live: `liveLayout {order, spans (span 0.5 = small tile), hidden, flow, reveal, slots, links, fx}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}` ·
 `slide {id, index?, title, text, sheet, mode, focus, cards, bg:{image, filter, theme}, duration}` · `removeSlide {id}`.
 Text docs: `setText {text}` · `append {text}`. Every sheet op takes an optional `sheet`; cell keys may carry a sheet prefix.

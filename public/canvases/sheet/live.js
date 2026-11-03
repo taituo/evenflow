@@ -9,6 +9,8 @@ import { tables as allTables, chartData, mergeAt, tableColumns, usedRange } from
 import { Engine, fmtValue, isImg } from '../../shared/engine.js';
 import { addr, parseAddr, parseRange, splitSheet, sameName } from '../../shared/a1.js';
 import { isErr } from '../../shared/formula.js';
+import { condStyle } from '../../shared/cond.js';
+import { FX, fxText, textOf, vaporRowsOut, vaporRowsIn } from './fx.js';
 
 // Background themes. Each one is a Paper Shaders fragment shader + its parameters.
 export const PRESETS = {
@@ -67,6 +69,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       <div class="lv-sep"></div>
       <button class="lv-btn" data-a="flow" title="Scroll direction (combined)">↕</button>
       <button class="lv-btn" data-a="reveal" title="Reveal cards as they scroll into view">✨</button>
+      <button class="lv-btn" data-a="fx" title="Change effect: what a value does when the data changes (morph · scramble · vapor · glow · none)">⟡ Morph</button>
       <button class="lv-btn" data-a="space" title="Add an empty space (e.g. for a logo) — drag it anywhere">＋ Space</button>
       <button class="lv-btn" data-a="links" title="Show relations between tables (and which table feeds which chart)">⛓</button>
       <button class="lv-btn" data-a="font" title="Typeface for this sheet in Live">Aa</button>
@@ -88,6 +91,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   // (gradients upscale invisibly), and as a last resort a still frame.
   const QUALITY = [1920 * 1080 * 2, 1920 * 1080 / 2, 960 * 540 / 2, 480 * 270];
   const gov = { level: 0, frozen: false, slow: 0, n: 0, t0: performance.now(), raf: 0 };
+  // ?quality=half|low|minimal|still starts lower — for a weak wall screen you already know about
+  { const qq = new URLSearchParams(location.search).get('quality'); const i = ['full', 'half', 'low', 'minimal'].indexOf(qq); if (i > 0) gov.level = i; if (qq === 'still') { gov.level = 3; gov.frozen = true; root.classList.add('lv-static'); } }
   const govTick = (now) => {
     gov.n++;
     if (now - gov.t0 >= 1500) {
@@ -171,7 +176,13 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     for (const { ch, r } of charts) {
       let data;
       try { data = chartData(doc, s.name, ch, en); } catch { data = { labels: [], series: [] }; }
-      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : 'chart', ch, data, r });
+      let light = null;
+      if (ch.type === 'kpi' && ch.value) {
+        const [vs, va] = splitSheet(ch.value);
+        const vsh = vs ? doc.sheets.find((x) => sameName(x.name, vs)) : s, vp = parseAddr(va);
+        if (vsh && vp) light = condStyle(en, vsh, vp.c, vp.r, en.value(vsh, vp.c, vp.r))?.dot;
+      }
+      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : 'chart', ch, data, r, light });
     }
     for (const x of tabs) {
       const r = G.rect(x.R);
@@ -183,7 +194,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         for (let c = x.R.c1; c <= x.R.c2; c++) {
           const A = addr(c, rr), cell = s.cells[A];
           const v = en.value(s, c, rr);
-          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v) });
+          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, rr, v)?.dot });
         }
         rows.push(row);
       }
@@ -203,7 +214,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const v = en.value(s, p.c, p.r);
       const st = cell.s || {};
       if (isImg(v)) items.push({ key: K + 'img:' + A, sheet: s.name, kind: 'img', url: v.url, r });
-      else items.push({ key: K + 'text:' + A, sheet: s.name, kind: 'text', A, raw: cell.v, text: fmtValue(v), st, num: typeof v === 'number', formula: cell.v[0] === '=', merged: !!M, r });
+      else items.push({ key: K + 'text:' + A, sheet: s.name, kind: 'text', A, raw: cell.v, text: fmtValue(v), st, num: typeof v === 'number', formula: cell.v[0] === '=', merged: !!M, r, light: condStyle(en, s, p.c, p.r, v)?.dot });
     }
     return items;
   }
@@ -230,7 +241,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
             const row = [];
             for (let c = U.c1; c <= U.c2; c++) {
               const A = addr(c, r), cell = s.cells[A], v = en.value(s, c, r);
-              row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v) });
+              row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, r, v)?.dot });
             }
             rows.push(row);
           }
@@ -288,7 +299,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const n = o?.span || (it.kind === 'table' ? (it.cols.length >= 6 ? 3 : it.cols.length >= 4 ? 2 : 1)
       : it.kind === 'chart' ? (it.ch.type !== 'pie' && it.ch.w >= 520 ? 2 : 1)
         : it.kind === 'panel' || it.kind === 'slot' ? (it.p || it.sl).span || 1 : 1);
-    return Math.max(1, Math.min(n, cols));
+    const min = ['kpi', 'stat', 'slot', 'img', 'panel'].includes(it.kind) ? 0.5 : 1;
+    return Math.max(min, Math.min(n, cols));
   }
   const FIXED_H = { kpi: 150, stat: 118, chart: 300, img: 260, slot: 180 };
   const heightOf = (it) => doc.live?.spans?.[it.key]?.h || (it.kind === 'panel' ? it.p.h : it.kind === 'slot' ? it.sl.h : 0) || FIXED_H[it.kind] || 0;
@@ -321,6 +333,12 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   }
 
   let vtSeq = 0;
+  function fxKind() { return FX.includes(doc.live?.fx) ? doc.live.fx : 'morph'; }
+  /** Traffic light on a card: a glowing dot and a colored edge; color changes cross-fade. */
+  function setLight(el, color) {
+    el.classList.toggle('lv-lit', !!color);
+    if (color) el.style.setProperty('--light', color); else el.style.removeProperty('--light');
+  }
   // ------------------------------------------------------------- flip: the sheet behind a card
   function fillBack(n, back, withHistory) {
     const keep = back.querySelector('.lv-back-hist')?.innerHTML || '';
@@ -381,6 +399,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     }
   }
   const inkTimer = setInterval(() => { if (!document.hidden) adaptInk(); }, 1500);
+  const beat = setInterval(() => reportState(), 30000);   // keeps this screen listed for remotes
 
   // ------------------------------------------------------------- slides: views become a presentation
   let playing = false, slideIdx = -1, slideTimer = null;
@@ -423,6 +442,40 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     }
   }
   function next(d) { if (slides().length) showSlide(slideIdx + d); }
+
+  // ------------------------------------------------------------- remote control: step through slides, or through cards
+  let cTimer = null;
+  function cardStep(d) {
+    const keys = [...stage.children].map((x) => x.dataset?.key).filter((k) => k && nodes.has(k) && !k.includes('::text:') && !k.startsWith('live::slot'));
+    if (!keys.length) return;
+    const i = keys.indexOf(focusKey);
+    setFocus(keys[i < 0 ? (d > 0 ? 0 : keys.length - 1) : (i + d + keys.length) % keys.length]);
+  }
+  function startCarousel() {
+    stopCarousel();
+    cardStep(1);
+    cTimer = setInterval(() => { if (!document.hidden) cardStep(1); }, (doc.live?.carousel || 7) * 1000);
+    root.classList.add('lv-carousel');
+    reportState();
+  }
+  function stopCarousel() { if (cTimer) { clearInterval(cTimer); cTimer = null; root.classList.remove('lv-carousel'); } }
+  function remoteAction(a) {
+    const hasSlides = slides().length > 0;
+    switch (a) {
+      case 'next': case 'prev': {
+        const d = a === 'next' ? 1 : -1;
+        if (hasSlides) { if (slideIdx < 0) { playing = false; showSlide(d > 0 ? 0 : slides().length - 1); } else showSlide(slideIdx + d); }
+        else if (cTimer) { clearInterval(cTimer); cardStep(d); cTimer = setInterval(() => { if (!document.hidden) cardStep(1); }, (doc.live?.carousel || 7) * 1000); }
+        else cardStep(d);
+        break;
+      }
+      case 'toggle': return remoteAction(playing || cTimer ? 'pause' : 'play');   // the screen knows its own state: no race
+      case 'play': if (hasSlides) play(slideIdx >= 0 ? slideIdx : 0); else startCarousel(); break;
+      case 'pause': stopCarousel(); if (playing) stopPlaying(); break;
+      case 'unfocus': stopCarousel(); if (playing || slide) leaveSlide(); setFocus(null); break;
+    }
+    reportState();
+  }
   function play(from = 0) {
     if (!slides().length) return;
     playing = true;
@@ -565,14 +618,15 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
                 : it.kind === 'panel' ? (it.p.text || '').slice(0, 80).replace(/\n/g, ' ')
                   : it.kind === 'slot' ? (it.sl.image ? 'image ' + it.sl.image : 'empty space')
                     : it.kind === 'text' ? it.text.slice(0, 60) : '';
-        const title = it.kind === 'chart' || it.kind === 'kpi' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : '';
+        const title = it.kind === 'chart' || it.kind === 'kpi' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
         return {
           key: it.key, kind: it.kind, title, summary,
           x: Math.round(r.left - v.left + scroller.scrollLeft), y: Math.round(r.top - v.top + scroller.scrollTop), w: Math.round(r.width), h: Math.round(r.height),
           visible: r.bottom > v.top && r.top < v.bottom && r.right > v.left && r.left < v.right && !n.el.classList.contains('lv-hidden'),
         };
       });
-      const body = closing ? { open: false } : {
+      const body = closing ? { open: false, screen: ctx.screen?.id } : {
+        screen: ctx.screen?.id, name: ctx.screen?.name, playing: playing || !!cTimer, slides: slides().length,
         open: true, mode, sheet: sh().name, focus: focusKey, flow: doc.live?.flow || 'vertical', quality: gov.frozen ? 'still' : ['full', 'half', 'low', 'minimal'][gov.level], slide: playing ? slideIdx + 1 : null,
         vw: Math.round(v.width), vh: Math.round(v.height), scroll: [scroller.scrollLeft, scroller.scrollTop], cards,
       };
@@ -632,8 +686,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         drag.target = { key: under.dataset.key, after };
       }
     } else {
-      drag.w = Math.max(160, drag.r0.width + dx);
-      drag.h = Math.max(80, drag.r0.height + dy);
+      drag.w = Math.max(96, drag.r0.width + dx);
+      drag.h = Math.max(72, drag.r0.height + dy);
       drag.el.style.width = drag.w + 'px';
       drag.el.style.height = drag.h + 'px';
     }
@@ -667,9 +721,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       submit([{ op: 'updateChart', id: ch.id, at: addr(c, r), dx: Math.round(sxp - G.cx(c)), dy: Math.round(syp - G.ry(r)) }]);
     } else if (mode === 'auto') {
       const hflow = root.classList.contains('lv-h');
-      const cols = hflow ? 3 : Math.max(1, getComputedStyle(stage).gridTemplateColumns.split(' ').length);
-      const colW = hflow ? 340 : (stage.clientWidth - 112 - (cols - 1) * 18) / cols;
-      const span = Math.max(1, Math.min(cols, Math.round((d.w + 18) / (colW + 18))));
+      const units = hflow ? 6 : Math.max(1, getComputedStyle(stage).gridTemplateColumns.split(' ').length);
+      const gap = parseFloat(getComputedStyle(stage).columnGap) || 18;
+      const uw = hflow ? 161 : parseFloat(getComputedStyle(stage).gridTemplateColumns) || 160;
+      const min = ['kpi', 'stat', 'slot', 'img', 'panel'].includes(d.n.item.kind) ? 1 : 2;
+      const span = Math.max(min, Math.min(units, Math.round((d.w + gap) / (uw + gap)))) / 2;
       const spans = { ...(doc.live?.spans || {}), [key]: { span, ...(d.n.item.kind !== 'table' ? { h: Math.round(d.h) } : {}) } };
       transition(() => { submit([{ op: 'liveLayout', spans }]); });
     } else if (d.n.item.kind === 'chart' || d.n.item.kind === 'kpi') {
@@ -742,7 +798,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     root.classList.toggle('lv-h', hflow);
     if (auto) { scale = 1; stage.style.height = ''; } else layoutScale(items);
     const seen = new Set();
-    const cols = hflow ? 3 : auto ? Math.max(1, getComputedStyle(stage).gridTemplateColumns.split(' ').length) : 1;
+    // the grid has half-width units: a normal card spans two, a small KPI can be a single square unit
+    const units = hflow ? 6 : auto ? Math.max(1, getComputedStyle(stage).gridTemplateColumns.split(' ').length) : 2;
+    const cols = Math.max(1, Math.floor(units / 2));
+    const unitW = auto && !hflow ? parseFloat(getComputedStyle(stage).gridTemplateColumns) || 160 : 160;
     for (const it of items) {
       seen.add(it.key);
       let n = nodes.get(it.key);
@@ -757,9 +816,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       if (auto) {
         stage.append(n.el); // DOM order = visual order in the grid
         n.el.style.left = n.el.style.top = n.el.style.width = '';
-        const span = spanOf(it, cols), hh = heightOf(it);
-        if (hflow) { n.el.style.gridColumn = ''; n.el.style.gridRowEnd = ''; n.el.style.width = span * 340 + (span - 1) * 18 + 'px'; }
-        else n.el.style.gridColumn = `span ${span}`;
+        const span = spanOf(it, cols), small = span < 1;
+        const hh = small && !doc.live?.spans?.[it.key]?.h ? Math.round(hflow ? 161 : unitW) : heightOf(it);
+        if (hflow) { n.el.style.gridColumn = ''; n.el.style.gridRowEnd = ''; n.el.style.width = Math.round(span * 340 + (span - 1) * 18) + 'px'; }
+        else n.el.style.gridColumn = `span ${Math.max(1, Math.min(units, Math.round(span * 2)))}`;
+        n.el.classList.toggle('lv-small', small);
         n.el.style.height = hh && it.kind !== 'table' ? hh + 'px' : 'auto';
         n.el.dataset.span = span;
         n.el.dataset.tag = doc.sheets.length > 1 ? it.sheet : '';
@@ -858,7 +919,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       el.innerHTML = '<div class="lv-title"></div><canvas></canvas>';
     } else if (it.kind === 'kpi') {
       el.className = 'lv-card lv-kpi';
-      el.innerHTML = '<div class="lv-label"></div><div class="lv-num"></div>';
+      el.innerHTML = '<div class="lv-label"></div><div class="lv-kpis"><div class="lv-num"></div><div class="lv-kv2"><div class="lv-sub2"></div><div class="lv-num2"></div></div></div>';
     } else if (it.kind === 'table') {
       el.className = 'lv-card lv-table';
       el.innerHTML = '<div class="lv-label"></div><div class="lv-tw"><table><thead></thead><tbody></tbody></table></div>';
@@ -909,7 +970,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const v = el.querySelector('.lv-statv');
       v.dataset.a = it.value.A; v.dataset.raw = it.value.raw; v.dataset.sheet = it.sheet;
       v.contentEditable = it.value.formula ? 'false' : 'plaintext-only';
-      if (v !== document.activeElement && v.textContent !== it.value.text) { if (n.item) pulse(el); v.textContent = it.value.text; }
+      if (v !== document.activeElement && textOf(v) !== it.value.text) { if (n.item) fxText(v, it.value.text, fxKind()); else v.textContent = it.value.text; }
+      setLight(el, it.value.light);
       return;
     }
     if (it.kind === 'chart') {
@@ -924,11 +986,26 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       el.querySelector('.lv-label').textContent = it.ch.title || it.data.kpi.label || '';
       const v = it.data.kpi.value;
       const pv = n.item?.data.kpi.value;
-      n.kpi = { to: v, text: it.data.kpi.text, from: typeof pv === 'number' ? (n.kpi?.cur ?? pv) : typeof v === 'number' ? 0 : v, t0: performance.now() };
-      const focused = it.key === focusKey;
-      const kh = focused ? el.clientHeight : mode === 'auto' ? FIXED_H.kpi : it.r.h * scale, kw = focused ? el.clientWidth : mode === 'auto' ? el.clientWidth || 300 : it.r.w * scale;
-      el.querySelector('.lv-num').style.fontSize = Math.min(kh * 0.48, kw * 0.3) + 'px';
-      if (n.item && pv !== v) pulse(el);
+      const kind = fxKind();
+      const counting = kind === 'morph' || !n.item;
+      n.kpi = { to: v, text: it.data.kpi.text, from: counting ? (typeof pv === 'number' ? (n.kpi?.cur ?? pv) : typeof v === 'number' ? 0 : v) : v, t0: performance.now() };
+      if (n.item && pv !== v) {
+        const num = el.querySelector('.lv-num');
+        if (counting) { num.classList.remove('fx-glow'); void num.offsetWidth; num.classList.add('fx-glow'); setTimeout(() => num.classList.remove('fx-glow'), 1300); }
+        else fxText(num, typeof v === 'number' ? fmtNum(v, v) : it.data.kpi.text || '—', kind);
+      }
+      // size: CSS container units fit the number to the card (any size down to a small square); --len is its width in characters
+      const k2 = it.data.kpi2;
+      const shown = typeof v === 'number' ? fmtNum(v, v) : it.data.kpi.text || '—';
+      el.style.setProperty('--len', Math.max(1.2, [...shown].length * (k2 ? 1.7 : 1)));
+      el.classList.toggle('lv-dual', !!k2);
+      if (k2) {
+        el.querySelector('.lv-sub2').textContent = k2.label || '';
+        const n2 = el.querySelector('.lv-num2'), t2 = typeof k2.value === 'number' ? fmtNum(k2.value, k2.value) : k2.text || '—';
+        el.style.setProperty('--len2', Math.max(1.2, [...t2].length));
+        if (textOf(n2) !== t2) { if (n.item?.data.kpi2) fxText(n2, t2, kind); else n2.textContent = t2; }
+      }
+      setLight(el, it.light);
     } else if (it.kind === 'table') {
       const lab = el.querySelector('.lv-label');
       lab.textContent = it.name;
@@ -937,18 +1014,33 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const fsz = mode === 'auto' ? 14 : Math.max(11, Math.min(17, 12 * scale));
       el.style.fontSize = fsz + 'px';
       const sig = it.cols.join('\u0001') + '|' + it.rows.length;
+      const rowKey = (row, i) => (row[0]?.text || '') + '\u0001' + (row[0]?.text ? '' : i);
       if (n.sig !== sig && !el.contains(document.activeElement)) {
+        const had = n.sig != null;
+        const oldKeys = [...tbody.rows].map((tr) => tr.dataset.k);
+        const newKeys = new Set(it.rows.map(rowKey));
+        const gone = had && fxKind() !== 'none' ? [...tbody.rows].filter((tr) => !newKeys.has(tr.dataset.k)) : [];
+        if (gone.length && !n.leaving && !n.vaporDone) {
+          // removed records evaporate first; the table re-forms when they're gone
+          n.leaving = true;
+          vaporRowsOut(gone, () => { n.leaving = false; n.vaporDone = true; render(); });
+          return;
+        }
+        if (n.leaving) return;
         thead.innerHTML = '<tr>' + it.cols.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr>';
-        tbody.innerHTML = it.rows.map((row) => '<tr>' + row.map((c) => `<td data-a="${c.A}"></td>`).join('') + '</tr>').join('');
+        tbody.innerHTML = it.rows.map((row, i) => `<tr data-k="${esc(rowKey(row, i))}">` + row.map((c) => `<td data-a="${c.A}"></td>`).join('') + '</tr>').join('');
         n.sig = sig;
+        n.vaporDone = false;
+        if (had && fxKind() !== 'none') vaporRowsIn([...tbody.rows].filter((tr) => !oldKeys.includes(tr.dataset.k)));
       }
       for (const row of it.rows) for (const c of row) {
         const td = tbody.querySelector(`td[data-a="${c.A}"]`);
         if (!td || td === document.activeElement) continue;
-        if (td.textContent !== c.text) { if (td.dataset.init) pulse(td); td.textContent = c.text; }
+        if (textOf(td) !== c.text) { if (td.dataset.init) fxText(td, c.text, fxKind()); else td.textContent = c.text; }
         td.dataset.init = 1;
         td.dataset.raw = c.raw;
-        td.className = (c.num ? 'num' : '') + (c.err ? ' err' : '');
+        td.classList.toggle('num', !!c.num); td.classList.toggle('err', !!c.err); td.classList.toggle('lit', !!c.light);
+        if (c.light) td.style.setProperty('--light', c.light); else td.style.removeProperty('--light');
         td.contentEditable = c.formula ? 'false' : 'plaintext-only';
         td.title = c.formula ? c.raw : '';
       }
@@ -971,7 +1063,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       el.dataset.a = it.A;
       el.dataset.raw = it.raw;
       el.contentEditable = it.formula ? 'false' : 'plaintext-only';
-      if (el !== document.activeElement && el.textContent !== it.text) { if (n.item) pulse(el); el.textContent = it.text; }
+      if (el !== document.activeElement && textOf(el) !== it.text) { if (n.item) fxText(el, it.text, fxKind()); else el.textContent = it.text; }
+      setLight(el, it.light);
     }
   }
 
@@ -1016,7 +1109,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
           k.cur = k.from + (k.to - k.from) * ease(t);
           num.textContent = fmtNum(k.cur, k.to);
           busy = true;
-        } else { k.cur = k.to; num.textContent = typeof k.to === 'number' ? fmtNum(k.to, k.to) : k.text || '—'; }
+        } else {
+          k.cur = k.to;
+          const fin = typeof k.to === 'number' ? fmtNum(k.to, k.to) : k.text || '—';
+          if (!num.__fx && num.textContent !== fin) num.textContent = fin;
+        }
       }
     }
     if (busy) raf = requestAnimationFrame(tick);
@@ -1085,6 +1182,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     fl.style.display = root.querySelector('[data-a=space]').style.display = mode === 'auto' ? '' : 'none';
     root.querySelector('[data-a=reveal]').classList.toggle('on', doc.live?.reveal !== false);
     root.querySelector('[data-a=links]').classList.toggle('on', doc.live?.links !== false);
+    syncFx();
     root.querySelector('[data-a=links]').style.display = mode === 'auto' ? '' : 'none';
     renderSlidePanel();
     const th = $('.lv-themes');
@@ -1139,6 +1237,18 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     while ((doc.live?.slots || []).some((x) => x.id === 'space' + i)) i++;
     transition(() => submit([{ op: 'liveLayout', slots: [...(doc.live?.slots || []), { id: 'space' + i, span: 1, h: 180 }] }]));
   };
+  root.querySelector('[data-a=fx]').onclick = () => {
+    const next = FX[(FX.indexOf(fxKind()) + 1) % FX.length];
+    submit([{ op: 'liveLayout', fx: next === 'morph' ? null : next }]);
+    syncFx();
+    // preview: the KPIs and stats on screen show the new effect once
+    for (const n of nodes.values()) {
+      const t = n.el.querySelector('.lv-num, .lv-statv');
+      if (t && !t.__fx && next !== 'none') { const real = t.textContent; t.textContent = real.replace(/\d/g, '0'); fxText(t, real, next); }
+    }
+  };
+  function syncFx() { root.querySelector('[data-a=fx]').textContent = '⟡ ' + fxKind()[0].toUpperCase() + fxKind().slice(1); }
+  syncFx();
   root.querySelector('[data-a=links]').onclick = () => { submit([{ op: 'liveLayout', links: doc.live?.links === false ? null : false }]); render(); };
   root.querySelector('[data-a=slides]').onclick = () => { root.classList.toggle('lv-slides-open'); renderSlidePanel(); };
   root.querySelector('[data-a=exit]').onclick = close;
@@ -1187,6 +1297,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     reportState(true);
     io?.disconnect();
     clearInterval(inkTimer);
+    clearInterval(beat);
+    stopCarousel();
     clearTimeout(slideTimer);
     root.classList.add('lv-out');
     setTimeout(() => root.remove(), 260);
@@ -1207,7 +1319,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     /** Remote control (agent / URL): { sheet?, mode?, focus? } */
     people: showPeople,
     present(o) {
-      if (o.slide) { play(Math.max(0, (+o.slide || 1) - 1)); return; }
+      if (o.action) return remoteAction(o.action);
+      if (o.theme && PRESETS[o.theme]) { submit([{ op: 'view', sheet: sh().name, theme: o.theme }]); applyTheme(); }
+      if (o.slide) { stopCarousel(); play(Math.max(0, (+o.slide || 1) - 1)); return; }
+      stopCarousel();
       if (playing || slide) { stopPlaying(); slide = null; }
       transition(() => {
         if (o.mode) mode = o.mode === 'auto' ? 'auto' : 'sheet';

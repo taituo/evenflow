@@ -79,13 +79,25 @@ const ME = (() => {
   }
   return u;
 })();
+// this browser tab as a Live screen: ?screen=tv names it; otherwise a per-tab id
+const SCREEN = (() => {
+  const q = new URLSearchParams(location.search).get('screen');
+  if (q) return { id: q.replace(/[^\w-]/g, '').slice(0, 40) || 'tv', name: q.slice(0, 40), named: true };
+  let id = null;
+  try { id = sessionStorage.getItem('spread.screen'); } catch {}
+  if (!id) { id = 'scr-' + Math.random().toString(36).slice(2, 6); try { sessionStorage.setItem('spread.screen', id); } catch {} }
+  return { id, name: `${ME.name} · ${/Mobi|Android/i.test(navigator.userAgent) ? 'phone' : 'screen'}` };
+})();
 let myPresence = {};
 function sendPresence(extra) {
   Object.assign(myPresence, extra || {});
   post('/api/presence', { ...ME, doc: S.docId, ...myPresence }).catch(() => {});
 }
 setInterval(() => { if (!document.hidden) sendPresence(); }, 15000);
-addEventListener('pagehide', () => navigator.sendBeacon?.('/api/presence', new Blob([JSON.stringify({ id: ME.id, leave: true })], { type: 'application/json' })));
+addEventListener('pagehide', () => {
+  navigator.sendBeacon?.('/api/presence', new Blob([JSON.stringify({ id: ME.id, leave: true })], { type: 'application/json' }));
+  if (document.querySelector('.lv')) navigator.sendBeacon?.('/api/live-state', new Blob([JSON.stringify({ open: false, screen: SCREEN.id })], { type: 'application/json' }));   // this screen goes away
+});
 S.people = [];
 function renderPeople() {
   const el = $('#people');
@@ -110,7 +122,7 @@ const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 // ------------------------------------------------------------------ ctx given to views
 let selTimer = null;
 const ctx = {
-  clientId, toast, menu, popover, get, post, me: ME,
+  clientId, toast, menu, popover, get, post, me: ME, screen: SCREEN,
   /** Live mode tells others what this user is looking at. */
   livePresence(l) { sendPresence({ live: l || null }); },
   get doc() { return S.doc; },
@@ -252,6 +264,7 @@ function connect() {
       return;
     }
     if (e.type === 'focus') { if (e.doc === S.docId) S.view?.focus?.(e); return; }
+    if (e.type === 'present' && e.screen && e.screen !== SCREEN.id) return;   // aimed at another screen
     if (e.type === 'present') {
       const go = () => S.view?.present?.(e);
       if (e.doc && e.doc !== S.docId) openDoc(e.doc).then(go); else go();
@@ -438,6 +451,8 @@ async function showDiff(c) {
   renderPeople();
   // deep link straight into Live / Focus: ?live=Dashboard&mode=auto&focus=chart:status&kiosk=1
   const q = new URLSearchParams(location.search);
-  if (q.has('live') || q.has('slides')) S.view?.present?.({ sheet: q.get('live') || undefined, mode: q.get('mode') || undefined, focus: q.get('focus') || undefined, kiosk: q.has('kiosk'), slide: q.has('slides') ? +q.get('slides') || 1 : undefined });
+  // ?screen=tv on its own makes this tab a wall screen: Live, combined, no chrome — driven from /remote
+  if (q.has('screen') && !q.has('live') && !q.has('slides')) S.view?.present?.({ mode: 'auto', kiosk: true });
+  else if (q.has('live') || q.has('slides')) S.view?.present?.({ sheet: q.get('live') || undefined, mode: q.get('mode') || undefined, focus: q.get('focus') || undefined, kiosk: q.has('kiosk'), slide: q.has('slides') ? +q.get('slides') || 1 : undefined });
   addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== S.docId && S.docs.find((d) => d.id === id)) openDoc(id); });
 })();

@@ -49,6 +49,7 @@ export function createServer(store) {
         if (Array.isArray(info)) for (const sh of info) {
           lines.push(`  ${sh.name}: used ${sh.used ?? '-'} · ${sh.cells} cells · ${sh.formulas} formulas${sh.freeze.rows || sh.freeze.cols ? ` · frozen ${sh.freeze.rows}r/${sh.freeze.cols}c` : ''}`);
           if (sh.merges.length) lines.push(`    merged: ${sh.merges.slice(0, 20).join(', ')}${sh.merges.length > 20 ? ' …' : ''}`);
+          for (const c of sh.conds || []) lines.push(`    traffic lights ${c.id} ${c.range}: ${c.rules.join(', ')}`);
           for (const c of sh.charts) lines.push(`    chart ${c.id} ${c.type}${c.title ? ` "${c.title}"` : ''} ← ${c.source} @${c.at}`);
           for (const t of sh.tables) lines.push(`    table ${t.name} ${t.range} · ${t.rows} rows · [${t.columns.join(' | ')}]`);
         }
@@ -176,7 +177,10 @@ export function createServer(store) {
     },
     'POST /api/present': async (req, res) => {
       const b = await body(req);
-      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off, slide: b.slide });
+      const ACTIONS = ['next', 'prev', 'play', 'pause', 'toggle', 'unfocus'];
+      if (b.action && !ACTIONS.includes(b.action)) throw httpErr(400, `action must be one of ${ACTIONS.join(' ')}`);
+      if (b.screen && !store.screens.has(String(b.screen))) throw httpErr(404, `No screen "${b.screen}" — see GET /api/screens`);
+      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off, slide: b.slide, action: b.action || null, theme: b.theme || null, screen: b.screen ? String(b.screen) : null });
       send(res, 200, { ok: true });
     },
     'POST /api/presence': async (req, res) => { const b = await body(req); if (b.leave) store.leavePresence(b.id); else store.touchPresence(b); send(res, 200, { ok: true }); },
@@ -197,12 +201,21 @@ export function createServer(store) {
       }
       q.get('format') === 'json' ? send(res, 200, list) : send(res, 200, formatHistory(list, title));
     },
-    'POST /api/live-state': async (req, res) => { store.live = await body(req); store.live.ts = Date.now(); send(res, 200, { ok: true }); },
+    // every open Live view is a screen (a TV, a laptop, a phone); remotes and agents drive them by id
+    'POST /api/live-state': async (req, res) => { const b = await body(req); store.setScreen(b); send(res, 200, { ok: true }); },
+    'GET /api/screens': (req, res, u) => {
+      const list = store.screenList();
+      if (u.searchParams.get('format') === 'json') return send(res, 200, list);
+      send(res, 200, list.length ? list.map((L) => `${L.screen}  "${L.name}"  ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet}${L.focus ? ' · focus ' + L.focus : ''}${L.slide ? ' · slide ' + L.slide + (L.playing ? ' ▶' : ' ⏸') : ''} · ${L.cards?.length || 0} cards · ${L.vw}×${L.vh}`).join('\n') : 'no screens: nobody has Live open');
+    },
     'GET /api/live': (req, res, u) => {
-      const L = store.live;
-      if (u.searchParams.get('format') === 'json') return send(res, 200, L || { open: false });
-      if (!L || !L.open) return send(res, 200, 'Live mode is not open on the user\'s screen');
-      const lines = [`Live open · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''}${L.slide ? ' · SLIDE ' + L.slide : ''}${L.quality && L.quality !== 'full' ? ' · background quality ' + L.quality + ' (slow device)' : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
+      const want = u.searchParams.get('screen');
+      const list = store.screenList();
+      const L = want ? list.find((x) => x.screen === want) : list[0];
+      if (u.searchParams.get('format') === 'json') return send(res, 200, L ? { ...L, screens: list.map((x) => ({ screen: x.screen, name: x.name })) } : { open: false, screens: [] });
+      if (!L) return send(res, 200, 'Live mode is not open on any screen');
+      const lines = [`Live open on "${L.name}" [${L.screen}] · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''}${L.slide ? ' · SLIDE ' + L.slide : ''}${L.quality && L.quality !== 'full' ? ' · background quality ' + L.quality + ' (slow device)' : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
+      if (list.length > 1) lines.push(`  (${list.length} screens: ${list.map((x) => x.screen).join(', ')} — ?screen=id for another)`);
       for (const c of L.cards || []) lines.push(`  ${c.visible ? '●' : '○'} ${c.key}  ${c.kind}${c.title ? ` "${c.title}"` : ''}  @${c.x},${c.y} ${c.w}×${c.h}${c.summary ? '  ' + c.summary : ''}`);
       lines.push('(● = on screen now; positions in CSS px of the live canvas)');
       send(res, 200, lines.join('\n'));
@@ -242,6 +255,7 @@ export function createServer(store) {
       // static
       let p = path.normalize(decodeURIComponent(u.pathname)).replace(/^(\.\.[/\\])+/, '');
       if (p === '/' || p === '\\') p = '/index.html';
+      if (p === '/remote' || p === '\\remote') p = '/remote.html';
       const f = path.join(PUBLIC, p);
       if (!f.startsWith(PUBLIC) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) throw httpErr(404, 'Not found');
       res.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-cache' });

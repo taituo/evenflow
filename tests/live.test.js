@@ -205,3 +205,71 @@ test('presence and attribution are sanitized', async () => {
   assert.equal(last.color, '#888888');
   await post('/api/presence', { id: 'x1', leave: true });
 });
+
+// ------------------------------------------------------------------ screens + remote control
+const sse = async (fn, ms = 200) => {
+  const events = [];
+  const ac = new AbortController();
+  const res = await fetch(base + '/api/events', { signal: ac.signal });
+  const reader = res.body.getReader();
+  const pump = (async () => { try { for (;;) { const { value, done } = await reader.read(); if (done) break; events.push(new TextDecoder().decode(value)); } } catch {} })();
+  await new Promise((r) => setTimeout(r, 80));
+  await fn();
+  await new Promise((r) => setTimeout(r, ms));
+  ac.abort(); await pump;
+  return events.join('').split('\n').filter((l) => l.startsWith('data:')).map((l) => JSON.parse(l.slice(5)));
+};
+
+test('screens: register, list, target, close; actions validated', async () => {
+  await post('/api/live-state', { open: true, screen: 'tv', name: 'Living room <b>', mode: 'auto', sheet: 'Dashboard', vw: 1920, vh: 1080, cards: [{ key: 'Dashboard::chart:kpiOpen', kind: 'kpi', title: 'Open tasks', visible: true }] });
+  await post('/api/live-state', { open: true, screen: 'lap/../top', name: 'Laptop', mode: 'sheet', sheet: 'Project', vw: 1440, vh: 900, cards: [] });
+  const list = await getJ('/api/screens?format=json');
+  assert.deepEqual(list.map((x) => x.screen).sort(), ['laptop', 'tv']);
+  assert.equal(list.find((x) => x.screen === 'tv').name, 'Living room b');
+  assert.match(await cm('screens'), /tv {2}"Living room b" {2}combined · 1 cards/);
+  assert.match(await get('/api/live?screen=tv'), /Live open on "Living room b" \[tv\]/);
+  assert.match(await get('/api/live'), /2 screens/);
+
+  // commands carry the target screen; unknown screens and actions are rejected
+  const ev = await sse(async () => {
+    await cm('present', 'next', '--screen', 'tv');
+    await cm('present', '--slide', '2', '--screen', 'tv');
+    await post('/api/present', { action: 'pause', screen: 'laptop' });
+  });
+  const pres = ev.filter((e) => e.type === 'present');
+  assert.deepEqual(pres.map((e) => [e.action, e.slide ?? null, e.screen]), [['next', null, 'tv'], [null, 2, 'tv'], ['pause', null, 'laptop']]);
+  assert.equal((await post('/api/present', { action: 'explode' })).status, 400);
+  assert.equal((await post('/api/present', { action: 'next', screen: 'nope' })).status, 404);
+
+  // a screen that closes, or goes quiet, disappears
+  const ev2 = await sse(() => post('/api/live-state', { open: false, screen: 'laptop' }), 300);
+  assert.ok(ev2.some((e) => e.type === 'screens' && e.screens.length === 1 && e.screens[0].screen === 'tv'));
+  store.screens.get('tv').ts -= 120000;
+  assert.deepEqual(await getJ('/api/screens?format=json'), []);
+  assert.match(await get('/api/live'), /not open on any screen/);
+});
+
+test('traffic lights via CLI and overview; KPI second value follows structure', async () => {
+  assert.match(await cm('traffic', 'Budget!D2:D5', '<20:green', 'between 20 60:amber', '>60:red'), /traffic lights c1 on D2:D5/);
+  assert.match(await get('/api/overview'), /traffic lights c1 D2:D5: < 20 → green, between 20 and 60 → amber, > 60 → red/);
+  await assert.rejects(cm('traffic', 'Budget!D2', 'whatever:green'), /Can't read rule/);
+  assert.match(await cm('traffic', 'Budget!D2:D5', 'off'), /removed/);
+
+  await ops([{ op: 'addChart', sheet: 'Dashboard', type: 'kpi', id: 'duo', value: 'Project!C12', value2: 'Project!C13', label2: 'cost', at: 'K2' }]);
+  let d = await doc();
+  const duo = d.sheets.find((s) => s.name === 'Dashboard').charts.find((c) => c.value2);
+  const data = (await getJ(`/api/chart?id=${duo.id}&format=json`)).data;
+  assert.ok(data.kpi && data.kpi2 && data.kpi2.label === 'cost', JSON.stringify(data));
+  await ops([{ op: 'insertRows', sheet: 'Project', at: 1, count: 1 }]);
+  d = await doc();
+  const after = d.sheets.find((s) => s.name === 'Dashboard').charts.find((c) => c.id === duo.id);
+  assert.equal(after.value2, 'Project!C14');
+  assert.equal(after.value, 'Project!C13', 'a KPI on another sheet follows its source cell');
+});
+
+test('live effect setting is part of the layout (undoable)', async () => {
+  const r = await post('/api/ops', { by: 'user', wantInverse: true, ops: [{ op: 'liveLayout', fx: 'vapor' }] }).then((x) => x.json());
+  assert.equal((await doc()).live.fx, 'vapor');
+  await ops(r.inverse);
+  assert.equal((await doc()).live.fx, undefined);
+});

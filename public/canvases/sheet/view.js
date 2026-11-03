@@ -2,9 +2,10 @@
 import { addr, parseAddr, colToName, parseRange, rangeToString, splitSheet, quoteSheet, sameName, norm, inRange } from '../../shared/a1.js';
 import { Engine, fmtValue, isImg } from '../../shared/engine.js';
 import { shiftFormula, refSpans, autoClose, literal, isErr, refBox } from '../../shared/formula.js';
-import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES } from '../../shared/types/sheet.js';
+import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES, tableColumns } from '../../shared/types/sheet.js';
 import { drawChart } from './charts.js';
 import { openLive } from './live.js';
+import { condStyle, LIGHTS, parseRule, describeRule } from '../../shared/cond.js';
 import { FONTS, fontStack } from '../../shared/fonts.js';
 import { sheetBlocks, toMarkdown, toHtml } from '../../shared/export.js';
 
@@ -240,12 +241,17 @@ export function mount(root, ctx) {
       else if ((r - T.r1) % 2 === 0) { g.fillStyle = '#f1f5fc'; g.fillRect(x, y, w - 1, h - 1); }
     }
     if (k.dset && k.dset.has(A)) { g.fillStyle = C.diff; g.fillRect(x, y, w - 1, h - 1); }
-    if (!cell) return;
-    const st = T && r === T.r1 ? { b: true, ...(cell.s || {}) } : cell.s || {};
+    const has = cell && cell.v !== '' && cell.v != null;
+    const v0 = has ? engine.value(s, c, r) : null;
+    const cs = s.conds && !(T && r === T.r1) ? condStyle(engine, s, c, r, v0) : null;   // traffic lights (not on table headers)
+    if (!cell && !cs) return;
+    const st = { ...(T && r === T.r1 ? { b: true } : {}), ...(cell?.s || {}), ...(cs ? Object.fromEntries(Object.entries(cs).filter(([q]) => q !== 'dot' && q !== 'light')) : {}) };
     if (st.fill) { g.fillStyle = st.fill; g.fillRect(x - 1, y - 1, w + 1, h + 1); }
+    if (cs?.dot) { g.fillStyle = cs.dot; g.fillRect(x - 1, y, Math.max(2, 3 * z), h - 1); }   // a light bar on the left edge
+    if (!cell) return;
     if (cell.n) { g.fillStyle = '#e8710a'; g.beginPath(); g.moveTo(x + w - 7 * z, y); g.lineTo(x + w - 1, y); g.lineTo(x + w - 1, y + 6 * z); g.fill(); }
-    if (cell.v === '' || cell.v == null) return;
-    const v = engine.value(s, c, r);
+    if (!has) return;
+    const v = v0;
     if (isImg(v)) { drawImg(v, x, y, w, h); return; }
     const t = fmtValue(v);
     if (!t) return;
@@ -422,18 +428,26 @@ export function mount(root, ctx) {
     // named tables: border + name chip at top-right
     for (const t of s.tables || []) {
       const R = parseRange(t.range);
-      const r = strokeRange(R, '#6f9be0', 1);
-      g.font = `600 ${Math.max(10, 11 * hz())}px system-ui, sans-serif`;
-      const label = '▦ ' + t.name;
-      const tw = g.measureText(label).width + 10, ch = Math.max(14, 15 * hz());
+      strokeRange(R, '#6f9be0', 1);
+      const c = chipRect(t);
       paneClip(R);
-      const cx = r.x + r.w - tw - 1, cy = r.y - ch;
-      g.fillStyle = '#0b57d0';
-      g.beginPath(); g.roundRect ? g.roundRect(cx, cy, tw, ch, [4, 4, 0, 0]) : g.rect(cx, cy, tw, ch); g.fill();
+      g.font = c.font;
+      g.fillStyle = hoverChip === t.name ? '#0842a0' : '#0b57d0';
+      g.beginPath(); g.roundRect ? g.roundRect(c.x, c.y, c.w, c.h, [4, 4, 0, 0]) : g.rect(c.x, c.y, c.w, c.h); g.fill();
       g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle';
-      g.fillText(label, cx + 5, cy + ch / 2 + 0.5);
+      g.fillText(c.label, c.x + 5, c.y + c.h / 2 + 0.5);
       g.textBaseline = 'alphabetic';
       g.restore();
+      // + row / + column handles on the table you're in
+      if (!edit && inRange(R, sel.active.c, sel.active.r)) {
+        for (const h of plusHandles(t)) {
+          g.fillStyle = hoverPlus === h.key ? '#0b57d0' : '#fff';
+          g.strokeStyle = '#0b57d0'; g.lineWidth = 1.2;
+          g.beginPath(); g.arc(h.x, h.y, h.r, 0, Math.PI * 2); g.fill(); g.stroke();
+          g.strokeStyle = hoverPlus === h.key ? '#fff' : '#0b57d0'; g.lineWidth = 1.6;
+          g.beginPath(); g.moveTo(h.x - h.r * 0.5, h.y); g.lineTo(h.x + h.r * 0.5, h.y); g.moveTo(h.x, h.y - h.r * 0.5); g.lineTo(h.x, h.y + h.r * 0.5); g.stroke();
+        }
+      }
     }
     // formula reference highlights while editing
     if (edit && edit.input.value[0] === '=') {
@@ -500,6 +514,64 @@ export function mount(root, ctx) {
       g.restore();
     }
   }
+  // ---------------------------------------------------------------- table chips (drag to move) and + handles
+  let hoverChip = null, hoverPlus = null;
+  function chipRect(t) {
+    const R = parseRange(t.range), r = rectOf(R);
+    const font = `600 ${Math.max(10, 11 * hz())}px system-ui, sans-serif`;
+    g.font = font;
+    const label = '▦ ' + t.name;
+    const w = g.measureText(label).width + 10, h = Math.max(14, 15 * hz());
+    return { x: r.x + r.w - w - 1, y: r.y - h, w, h, font, label, R };
+  }
+  function plusHandles(t) {
+    const r = rectOf(parseRange(t.range)), rad = Math.max(7, 8 * hz());
+    return [
+      { key: t.name + ':row', kind: 'row', t, x: r.x + rad + 2, y: r.y + r.h + rad + 3, r: rad },
+      { key: t.name + ':col', kind: 'col', t, x: r.x + r.w + rad + 3, y: r.y + rad + 2, r: rad },
+    ];
+  }
+  function hitChip(x, y) {
+    for (const t of sh().tables || []) { const c = chipRect(t); if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) return t; }
+    return null;
+  }
+  function hitPlus(x, y) {
+    if (edit) return null;
+    for (const t of sh().tables || []) {
+      if (!inRange(parseRange(t.range), sel.active.c, sel.active.r)) continue;
+      for (const h of plusHandles(t)) if (Math.hypot(x - h.x, y - h.y) <= h.r + 3) return h;
+    }
+    return null;
+  }
+  function addTableRow(t) {
+    const R = parseRange(t.range);
+    submit([{ op: 'appendRows', sheet: sh().name, table: t.name, rows: [[]] }]);
+    setActive({ c: R.c1, r: R.r2 + 1 });
+    ensureVisible(R.c1, R.r2 + 1);
+  }
+  function addTableCol(t) {
+    const R = parseRange(t.range), s = sh();
+    const names = new Set(tableColumns(s, R).map((x) => String(x).toLowerCase()));
+    let i = R.c2 - R.c1 + 2; while (names.has(('column ' + i))) i++;
+    submit([{ op: 'addColumn', sheet: s.name, table: t.name, name: 'Column ' + i }]);
+    setActive({ c: R.c2 + 1, r: R.r1 });
+    ensureVisible(R.c2 + 1, R.r1);
+    startEdit('edit');   // name it right away: the default name is selected, typing replaces it
+    ed.setSelectionRange(0, ed.value.length);
+  }
+  /** Move a whole table (cells, formats, its rules) — within the sheet or to another one. */
+  function moveTable(t, toSheet, at) {
+    const R = parseRange(t.range);
+    const dest = at || addr(R.c1, R.r1);
+    submit([{ op: 'move', sheet: sh().name, from: t.range, to: (toSheet && !sameName(toSheet, sh().name) ? quoteSheet(toSheet) + '!' : '') + dest }]);
+    if (toSheet && !sameName(toSheet, sh().name)) {
+      switchSheet(doc.sheets.find((x) => sameName(x.name, toSheet)).name);
+      const p = parseAddr(dest);
+      setActive(p); ensureVisible(p.c, p.r);
+      ctx.toast(`Moved table ${t.name} to ${toSheet}`);
+    }
+  }
+
   function hitChart(x, y) {
     const list = sh().charts || [];
     for (let i = list.length - 1; i >= 0; i--) {
@@ -1069,6 +1141,7 @@ export function mount(root, ctx) {
     for (const s of doc.sheets) {
       const b = document.createElement('button');
       b.className = 'sv-tab' + (sameName(s.name, sheetName) ? ' on' : '');
+      b.dataset.sheet = s.name;
       b.textContent = s.name;
       if (agentSheets.has(s.name.toLowerCase())) b.insertAdjacentHTML('beforeend', '<span class="dot" title="agent changed this sheet"></span>');
       for (const p of others.filter((x) => x.sheet && sameName(x.sheet, s.name)).slice(0, 4)) b.insertAdjacentHTML('beforeend', `<span class="pdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(p.color) ? p.color : '#888'}" title="${String(p.name).replace(/[<>"&]/g, '')} is here"></span>`);
@@ -1169,6 +1242,7 @@ export function mount(root, ctx) {
     <button class="tb" data-a="merge" title="Merge cells">⧉</button>
     <button class="tb" data-a="table" title="Make a named table from the selection">▦</button>
     <button class="tb" data-a="chart" title="Insert chart from selection (or table / KPI from one cell)">📊</button>
+    <button class="tb" data-a="traffic" title="Traffic lights: color cells by their value (conditional formatting)">🚦</button>
     <div class="sep"></div>
     <button class="tb" data-a="freeze" title="Freeze rows/cols up to the active cell">❄</button>
     <button class="tb" data-a="grid" title="Show / hide gridlines (dashboard look)">#</button>
@@ -1220,7 +1294,61 @@ export function mount(root, ctx) {
       case 'merge': return mergeMenu(btn.getBoundingClientRect());
       case 'table': return createTable(btn);
       case 'sum': return autoSum();
+      case 'traffic': return trafficEditor(btn.getBoundingClientRect());
     }
+  }
+
+  // ---------------------------------------------------------------- traffic lights editor
+  const WHEN_LABEL = { '<': '<', '<=': '≤', '>': '>', '>=': '≥', '=': '=', '<>': '≠', between: 'between', contains: 'contains', empty: 'is empty', notEmpty: 'not empty', any: 'anything' };
+  function trafficEditor(anchor) {
+    const s = sh();
+    const R = clampFull(lastR());
+    const here = (s.conds || []).find((cd) => { const C2 = parseRange(cd.range); return C2.c1 <= R.c2 && R.c1 <= C2.c2 && C2.r1 <= R.r2 && R.r1 <= C2.r2; });
+    const range = here ? here.range : rangeToString(R);
+    // presets guess from the data: numbers → thresholds, words → status lights
+    const vals = [];
+    const PR = parseRange(range);
+    for (let r = PR.r1; r <= Math.min(PR.r2, PR.r1 + 200); r++) for (let c = PR.c1; c <= PR.c2; c++) { const v = engine.value(s, c, r); if (v != null && v !== '') vals.push(v); }
+    const nums = vals.filter((v) => typeof v === 'number').sort((a, b) => a - b);
+    const words = [...new Set(vals.filter((v) => typeof v === 'string').map((v) => v.toLowerCase()))].slice(0, 8);
+    const q = (f) => nums.length ? +nums[Math.floor((nums.length - 1) * f)].toPrecision(3) : 0;
+    let rules = here ? JSON.parse(JSON.stringify(here.rules)) : nums.length >= words.length
+      ? [{ when: '<', value: q(0.34), light: 'green' }, { when: 'between', value: q(0.34), value2: q(0.67), light: 'amber' }, { when: '>', value: q(0.67), light: 'red' }]
+      : words.map((w) => ({ when: '=', value: w, light: /done|ok|yes|valmis|green|✓/.test(w) ? 'green' : /late|over|fail|no|red|✗|blocked/.test(w) ? 'red' : /open|wip|todo|amber|pending/.test(w) ? 'amber' : 'gray' }));
+    ctx.popover(anchor.left != null ? anchor : { left: anchor.x, bottom: anchor.y }, (p, close) => {
+      p.classList.add('trafficpop');
+      const draw = () => {
+        p.innerHTML = `<div class="tp-h">🚦 Traffic lights <code>${range}</code>${here ? ` <span>${here.id}</span>` : ''}</div>
+          <div class="tp-rules">${rules.map((r, i) => `<div class="tp-r" data-i="${i}">
+            <select data-k="when">${Object.entries(WHEN_LABEL).map(([k, l]) => `<option value="${k}" ${r.when === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <input data-k="value" value="${r.value ?? ''}" placeholder="value or =Sheet!B1" ${['empty', 'notEmpty', 'any'].includes(r.when) ? 'hidden' : ''}>
+            <input data-k="value2" value="${r.value2 ?? ''}" placeholder="and" ${r.when === 'between' ? '' : 'hidden'}>
+            <span class="tp-lights">${['green', 'amber', 'red', 'blue', 'gray'].map((l) => `<i data-l="${l}" class="${r.light === l ? 'on' : ''}" style="background:${LIGHTS[l].dot}" title="${l}"></i>`).join('')}</span>
+            <button data-x="del" title="Remove rule">✕</button></div>`).join('')}</div>
+          <div class="tp-foot"><button class="btn2" data-x="add">＋ Rule</button>${here ? '<button class="btn2" data-x="remove">Remove all</button>' : ''}<span style="flex:1"></span><button class="btn" data-x="save">Apply</button></div>
+          <div class="tp-hint">First matching rule wins. Values can be formulas, e.g. <code>=Settings!B1</code>. Lights follow the cells when rows, columns or tables move.</div>`;
+      };
+      const lit = (x) => (x === '' ? '' : x[0] === '=' ? x : !isNaN(+x) ? +x : x);
+      p.addEventListener('input', (e) => { const row = e.target.closest('.tp-r'); if (row) { rules[+row.dataset.i][e.target.dataset.k] = e.target.dataset.k === 'when' ? e.target.value : lit(e.target.value); if (e.target.dataset.k === 'when') draw(); } });
+      p.addEventListener('change', (e) => { const row = e.target.closest('.tp-r'); if (row && e.target.dataset.k === 'when') { rules[+row.dataset.i].when = e.target.value; draw(); } });
+      p.addEventListener('click', (e) => {
+        const l = e.target.closest('[data-l]'), x = e.target.closest('[data-x]'), row = e.target.closest('.tp-r');
+        if (l && row) { rules[+row.dataset.i].light = l.dataset.l; delete rules[+row.dataset.i].style; draw(); return; }
+        if (!x) return;
+        if (x.dataset.x === 'del') { rules.splice(+row.dataset.i, 1); draw(); }
+        if (x.dataset.x === 'add') { rules.push({ when: '>', value: 0, light: 'red' }); draw(); }
+        if (x.dataset.x === 'remove') { close(); submit([{ op: 'removeCond', sheet: s.name, id: here.id }]); ed.focus(); }
+        if (x.dataset.x === 'save') {
+          const clean = rules.filter((r) => r.light || r.style).map((r) => Object.fromEntries(Object.entries(r).filter(([k, v]) => v !== '' && !(k === 'value2' && r.when !== 'between') && !(k === 'value' && ['empty', 'notEmpty', 'any'].includes(r.when)))));
+          close();
+          if (!clean.length) { if (here) submit([{ op: 'removeCond', sheet: s.name, id: here.id }]); }
+          else submit([{ op: 'cond', sheet: s.name, range, rules: clean, ...(here ? { id: here.id } : {}) }]);
+          ed.focus();
+        }
+      });
+      p.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); p.querySelector('[data-x=save]').click(); } });
+      draw();
+    });
   }
   function colorPicker(btn, key) {
     ctx.popover(btn, (p, close) => {
@@ -1527,6 +1655,18 @@ export function mount(root, ctx) {
     const p = hit(x, y);
     e.preventDefault();
     tip.hidden = true;
+    const hp = x > hw() && y > hh() ? hitPlus(x, y) : null;
+    if (hp) { if (hp.kind === 'row') addTableRow(hp.t); else addTableCol(hp.t); return; }
+    const chip = x > hw() && y > hh() && !(edit && pointable()) ? hitChip(x, y) : null;
+    if (chip) {
+      if (edit) commitEdit();
+      const R = parseRange(chip.range);
+      sel = { ranges: [{ ...R }], active: { c: R.c1, r: R.r1 }, anchor: { c: R.c1, r: R.r1 }, cursor: { c: R.c2, r: R.r2 } };
+      afterSelect();
+      drag = { type: 'move', src: { ...R }, start: p.c >= 0 && p.r >= 0 ? { c: Math.min(R.c2, Math.max(R.c1, p.c)), r: R.r1 } : { c: R.c1, r: R.r1 }, dr: 0, dc: 0, table: chip };
+      document.body.classList.add('sv-moving-table');
+      return listen();
+    }
     const hc = x > hw() && y > hh() ? hitChart(x, y) : null;
     if (hc && !(edit && pointable())) {
       if (edit) commitEdit();
@@ -1581,6 +1721,11 @@ export function mount(root, ctx) {
   }
   function onDragMove(e) {
     lastMouse = e;
+    if (drag?.type === 'move') {
+      document.body.classList.add('sv-moving');
+      const tab = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.sv-tab');
+      tabsEl.querySelectorAll('.sv-tab').forEach((x) => x.classList.toggle('drop', x === tab && !x.classList.contains('on')));
+    }
     dragAt(e);
     const { x, y } = local(e);
     const out = x < hw() || y < hh() || x > W || y > H;
@@ -1630,6 +1775,8 @@ export function mount(root, ctx) {
   }
   function onDragUp() {
     removeEventListener('mousemove', onDragMove);
+    document.body.classList.remove('sv-moving-table', 'sv-moving');
+    tabsEl.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop'));
     clearInterval(autoTimer); autoTimer = null;
     const d = drag;
     drag = null;
@@ -1640,6 +1787,16 @@ export function mount(root, ctx) {
         const p = hit(cx, cy);
         submit([{ op: 'updateChart', id: d.id, at: addr(Math.max(0, p.c), Math.max(0, p.r)), dx: Math.round((cx - sx(p.c)) / z), dy: Math.round((cy - sy(p.r)) / z) }]);
       } else submit([{ op: 'updateChart', id: d.id, w: Math.round(d.cur.w / z), h: Math.round(d.cur.h / z) }]);
+    } else if (d.type === 'move' && lastMouse && document.elementFromPoint(lastMouse.clientX, lastMouse.clientY)?.closest('.sv-tab')) {
+      // dropped on a sheet tab: the block (or table) moves to that sheet, same place
+      const tab = document.elementFromPoint(lastMouse.clientX, lastMouse.clientY).closest('.sv-tab');
+      const dest = tab.dataset.sheet;
+      if (dest && !sameName(dest, sh().name)) {
+        const destSheet = doc.sheets.find((x) => sameName(x.name, dest));
+        const at = freeSpot(destSheet, d.src);   // never on top of what's already there
+        if (d.table) moveTable(d.table, dest, at);
+        else { submit([{ op: 'move', sheet: sh().name, from: rangeToString(d.src), to: quoteSheet(dest) + '!' + at }]); switchSheet(destSheet.name); }
+      }
     } else if (d.type === 'move' && (d.dr || d.dc)) {
       const R = d.src;
       const to = { c1: R.c1 + d.dc, r1: R.r1 + d.dr, c2: R.c2 + d.dc, r2: R.r2 + d.dr };
@@ -1678,8 +1835,15 @@ export function mount(root, ctx) {
     const { x, y } = local(e);
     const p = hit(x, y);
     let cur = 'default';
-    const hcv = x > hw() && y > hh() ? hitChart(x, y) : null;
-    if (hcv) cur = hcv.handle ? 'nwse-resize' : 'move';
+    const hpv = x > hw() && y > hh() ? hitPlus(x, y) : null, chv = x > hw() && y > hh() && !hpv ? hitChip(x, y) : null;
+    const hk = hpv?.key || null, ck = chv?.name || null;
+    if (hk !== hoverPlus || ck !== hoverChip) { hoverPlus = hk; hoverChip = ck; requestDraw(); }
+    const hcv = x > hw() && y > hh() && !hpv && !chv ? hitChart(x, y) : null;
+    if (hpv) { cur = 'pointer'; scroller.title = hpv.kind === 'row' ? `Add a row to ${hpv.t.name}` : `Add a column to ${hpv.t.name}`; }
+    else if (chv) { cur = 'grab'; scroller.title = `Drag to move table ${chv.name} — drop on a sheet tab to move it there`; }
+    else scroller.title = '';
+    if (hpv || chv) { /* cursor set above */ }
+    else if (hcv) cur = hcv.handle ? 'nwse-resize' : 'move';
     else if (p.r === -1 && p.c >= 0 && colEdge(x) >= 0) cur = 'col-resize';
     else if (p.c === -1 && p.r >= 0 && rowEdge(y) >= 0) cur = 'row-resize';
     else if (nearFillHandle(x, y)) cur = 'crosshair';
@@ -1740,6 +1904,7 @@ export function mount(root, ctx) {
       { label: `▦ ${tab.t.name}: rename table…`, action: () => askName(e, 'Table name', tab.t.name, (n) => submit([{ op: 'renameTable', name: tab.t.name, newName: n }])) },
       { label: `▦ ${tab.t.name}: delete record${nR > 1 ? 's' : ''}`, disabled: R.r1 <= tab.R.r1, action: () => submit([{ op: 'removeRows', table: tab.t.name, rows: Array.from({ length: nR }, (_, i) => R.r1 + i - tab.R.r1) }]) },
       { label: `▦ ${tab.t.name}: remove table (keep data)`, action: () => submit([{ op: 'deleteTable', name: tab.t.name }]) },
+      ...doc.sheets.filter((x) => !sameName(x.name, sh().name)).slice(0, 6).map((x) => ({ label: `▦ ${tab.t.name}: move to sheet ${x.name}`, action: () => moveTable(tab.t, x.name, freeSpot(x, parseRange(tab.t.range))) })),
       '-',
     ] : [{ label: '▦ Create table from selection…', action: () => createTable(e) }, '-'];
     tableItems.unshift({ label: '📊 Insert chart', action: () => insertChart() });
@@ -1760,6 +1925,7 @@ export function mount(root, ctx) {
       { label: 'Clear contents', kbd: 'Del', action: clearSelection },
       '-',
       { label: hasNote ? 'Edit note' : 'Insert note', action: () => noteEditor(A) },
+      { label: '🚦 Traffic lights…', action: () => trafficEditor({ left: e.clientX, bottom: e.clientY }) },
       { label: `🕘 History of ${A}`, action: () => showHistory(e, `cell=${encodeURIComponent(quoteSheet(sh().name) + '!' + A)}`, `${sh().name}!${A}`) },
       ...(tab ? [{ label: `🕘 History of table ${tab.t.name}`, action: () => showHistory(e, `table=${encodeURIComponent(tab.t.name)}`, `table ${tab.t.name}`) }] : []),
       ...(hasNote ? [{ label: 'Remove note', action: () => submit([{ op: 'note', sheet: sh().name, cell: A, text: null }]) }] : []),
@@ -1780,6 +1946,18 @@ export function mount(root, ctx) {
         return `<div class="hp-r"><span class="hp-v">v${x.v}</span><span class="hp-w ${x.by === 'user' ? '' : 'agent'}">${esc(who)}</span><span class="hp-t">${when}</span><div class="hp-x">${what}</div></div>`;
       }).join('') : '<div class="hp-empty">No recorded changes (the log keeps recent history).</div>');
     });
+  }
+
+  /** Top-left of the first empty area on a sheet big enough for R (keeps the column, scans downward). */
+  function freeSpot(s2, R) {
+    const h = R.r2 - R.r1, w = R.c2 - R.c1;
+    const busy = (c, r) => !!s2.cells[addr(c, r)] || (s2.tables || []).some((t) => inRange(parseRange(t.range), c, r));
+    for (let r = R.r1; r < R.r1 + 2000; r++) {
+      let ok = true;
+      for (let rr = r; rr <= r + h + 1 && ok; rr++) for (let cc = R.c1; cc <= R.c1 + w && ok; cc++) if (busy(cc, rr)) ok = false;
+      if (ok) return addr(R.c1, r === R.r1 ? r : r + 1);
+    }
+    return addr(R.c1, R.r1);
   }
 
   function askName(anchorEvt, placeholder, value, done) {

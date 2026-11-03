@@ -141,6 +141,9 @@ test('fuzz: every op followed by its inverse restores the workbook exactly', () 
     S.apply(st, { op: 'slide', id: 's1', title: 'One', cards: ['chart1'], bg: { image: '/a.gif', filter: 'dither' } });
     S.apply(st, { op: 'slide', id: 's2', title: 'Two', text: 'x' });
     S.apply(st, { op: 'panel', id: 'p1', title: 'P', text: 't' });
+    S.apply(st, { op: 'cond', range: rng(), rules: [{ when: '<', value: 10, light: 'green' }, { when: '>=', value: '=A1', light: 'red' }] });
+    S.apply(st, { op: 'cond', range: 'Two!' + rng(), rules: [{ when: 'contains', value: 'x', style: { fill: '#ff0000' } }, { when: '>', value: '=Sheet1!' + cell(), light: 'red' }] });
+    S.apply(st, { op: 'cond', range: rng(), rules: [{ when: '<', value: '=Two!' + cell(), light: 'blue' }] });
     const before = canon(st);
     const ops = [
       () => ({ op: 'move', from: rng(), to: (rnd(4) ? '' : 'Two!') + cell() }),
@@ -165,6 +168,8 @@ test('fuzz: every op followed by its inverse restores the workbook exactly', () 
       () => ({ op: 'removePanel', id: 'p1' }),
       () => ({ op: 'liveLayout', order: ['a', 'b'], links: rnd(2) ? false : null, flow: rnd(2) ? 'horizontal' : null }),
       () => ({ op: 'view', grid: !!rnd(2), theme: 'ember', font: 'serif' }),
+      () => ({ op: 'cond', range: rng(), rules: [{ when: 'between', value: 1, value2: 5, light: 'amber' }], id: rnd(2) ? 'c1' : undefined }),
+      () => ({ op: 'removeCond', id: 'c1' }),
     ];
     const op = ops[rnd(ops.length)]();
     let res;
@@ -275,4 +280,39 @@ test('charts: live data from range/table, follow structure, exact undo', () => {
   assert.equal(st.sheets[0].charts[0].range, 'B4:D7');
   assert.equal(st.sheets[0].charts[0].table, undefined);
   assert.equal(st.sheets[0].charts[0].type, 'column');
+});
+
+test('traffic lights: rules, formulas as thresholds, follow moves and inserts, exact undo', async () => {
+  const { condStyle, parseRule } = await import('../public/shared/cond.js');
+  const st = wb();
+  S.apply(st, { op: 'set', cells: { A1: '5', A2: '50', A3: '500', A4: 'done', A5: '', B1: '100' } });
+  S.apply(st, { op: 'cond', range: 'A1:A5', rules: [{ when: '<', value: 10, light: 'green' }, { when: '>', value: '=B1', light: 'red' }, { when: '=', value: 'DONE', light: 'blue' }, { when: 'empty', light: 'gray' }] });
+  const en = new Engine(st), sh = st.sheets[0];
+  const L = (r) => condStyle(en, sh, 0, r, en.value(sh, 0, r))?.light ?? null;
+  assert.deepEqual([0, 1, 2, 3, 4].map(L), ['green', null, 'red', 'blue', 'gray']);
+  // the threshold is a live formula
+  S.apply(st, { op: 'set', cells: { B1: '20' } });
+  const en2 = new Engine(st);
+  assert.equal(condStyle(en2, sh, 0, 1, en2.value(sh, 0, 1)).light, 'red');
+  // structure: insert above shifts, move to another sheet carries the rules
+  S.apply(st, { op: 'insertRows', at: 1, count: 2 });
+  assert.equal(sh.conds[0].range, 'A3:A7');
+  assert.equal(sh.conds[0].rules[1].value, '=B3', 'formula threshold follows the insert');
+  S.apply(st, { op: 'addSheet', name: 'Two' });
+  const canon = (x) => JSON.stringify(x, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((q) => [q, v[q]])) : v));
+  const before = canon(st);
+  const r = S.apply(st, { op: 'move', from: 'A3:A7', to: 'Two!C1' });
+  assert.equal(sh.conds, undefined);
+  assert.equal(st.sheets[1].conds[0].range, 'C1:C5');
+  assert.equal(st.sheets[1].conds[0].rules[1].value, '=Sheet1!B3', 'threshold still points at Sheet1');
+  for (const inv of r.inverse) S.apply(st, inv);
+  assert.equal(canon(st), before);
+  // validation + CLI shorthand
+  assert.throws(() => S.apply(st, { op: 'cond', range: 'A1', rules: [{ when: 'nope', light: 'red' }] }), /Unknown rule/);
+  assert.throws(() => S.apply(st, { op: 'cond', range: 'A1', rules: [{ when: '<', value: 1, light: 'pink' }] }), /Unknown light/);
+  assert.deepEqual(parseRule('between 100 200:amber'), { when: 'between', value: 100, value2: 200, light: 'amber' });
+  assert.deepEqual(parseRule('>=Settings:red').when, '>=');
+  assert.deepEqual(parseRule('<=Settings!B1:red'), { when: '<=', value: 'Settings!B1', light: 'red' });
+  assert.deepEqual(parseRule('<==Settings!B1:red'), { when: '<=', value: '=Settings!B1', light: 'red' });
+  assert.deepEqual(parseRule('contains late:#ff0000'), { when: 'contains', value: 'late', style: { fill: '#ff0000' } });
 });

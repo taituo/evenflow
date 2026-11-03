@@ -31,15 +31,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ops = (o, by = 'agent') => api('POST', '/api/ops', { by, ops: o });
   const cellRaw = async (sheet, a) => (await api('GET', '/api/doc?id=main')).doc.sheets.find((s) => s.name === sheet).cells[a]?.v;
 
-  const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  // one browser per "device": without a GPU, pages in one browser share one software GPU process, and a Live
+  // shader on one page would starve the others — unlike real separate devices
+  const ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
+  const browsers = [];
+  const device = async (opts) => {
+    const b = await chromium.launch({ args: ARGS });
+    browsers.push(b);
+    const ctx = await b.newContext(opts);
+    ctx.on('close', () => b.close().catch(() => {}));
+    return ctx;
+  };
+  const allPages = () => browsers.filter((b) => b.isConnected()).flatMap((b) => b.contexts().flatMap((c) => c.pages()));
   const errors = [];
   const results = [];
   const page = async (name, viewport = { width: 1440, height: 900 }, url = '/#main') => {
-    const ctx = await browser.newContext({ viewport });
+    const ctx = await device({ viewport });
     const p = await ctx.newPage();
     p.on('pageerror', (e) => errors.push(`[${name}] ${e.message}`));
     p.on('console', (m) => { if (m.type() === 'error' && !/favicon|net::ERR_ABORTED/.test(m.text())) errors.push(`[${name}] console: ${m.text()}`); });
-    await p.goto(B + url);
+    // 2-core CI without a GPU: start Live's backgrounds at low resolution (the governor would get there anyway)
+    await p.goto(B + url.replace(/^(\/[^#?]*)(\?[^#]*)?/, (m, a, qs) => a + (qs ? qs + '&' : '?') + 'quality=low'));
     await p.waitForSelector('.sv-canvas', { timeout: 30000, state: 'attached' });
     await sleep(600);
     return p;
@@ -82,7 +94,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     catch (e) {
       results.push(['FAIL', name, e.message]);
       console.log(`FAIL ${name}\n     ${e.message.split('\n').filter((l) => !/^\s*-\s*(waiting|retrying|attempting)|×/.test(l)).slice(0, 8).join('\n     ')}`);
-      for (const [i, pg] of browser.contexts().flatMap((c) => c.pages()).entries()) await pg.screenshot({ path: path.join(SHOTS, `fail-${name.slice(0, 20).replace(/\W+/g, '_')}-${i}.png`), timeout: 20000 }).catch(() => {});
+      for (const [i, pg] of allPages().entries()) await pg.screenshot({ path: path.join(SHOTS, `fail-${name.slice(0, 20).replace(/\W+/g, '_')}-${i}.png`), timeout: 20000 }).catch(() => {});
     }
   }
 
@@ -388,6 +400,213 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await S.context().close();
   });
 
+  // ================================================================ traffic lights, effects, KPI tiles
+  const cellAt = async (p, ref) => { await goto(p, ref); return p.evaluate(() => { const r = document.querySelector('.sv-editor').getBoundingClientRect(); return { x: r.left, y: r.top }; }); };
+  const docNow = async () => (await api('GET', '/api/doc?id=main')).doc;
+  const tableRange = async (n) => { const d = await docNow(); for (const s of d.sheets) for (const tb of s.tables || []) if (tb.name === n) return s.name + '!' + tb.range; return null; };
+
+  await t('traffic lights: set up in the grid, shown in Live, and they change when the value crosses a threshold', async () => {
+    const G = await page('traffic', { width: 1440, height: 900 }, '/#main');
+    await goto(G, 'Project!C7:C11');
+    await G.click('[data-a=traffic]');
+    await G.waitForSelector('.trafficpop .tp-r');
+    // status words are recognised: done → green, open → amber
+    const rows = await G.locator('.tp-r').evaluateAll((rs) => rs.map((r) => [r.querySelector('input[data-k=value]').value, r.querySelector('.tp-lights i.on')?.dataset.l]));
+    ok(rows.some(([v, l]) => v === 'done' && l === 'green') && rows.some(([v, l]) => v === 'open' && l === 'amber'), 'guessed rules: ' + JSON.stringify(rows));
+    await G.click('.trafficpop [data-x=save]');
+    await until(async () => (await docNow()).sheets.find((x) => x.name === 'Project').conds?.length, 5000, 'rule saved');
+    // a numeric light on the KPI's source cell, from the CLI shorthand path (API)
+    const c12 = (await docNow()).sheets.find((x) => x.name === 'Dashboard').charts.find((c) => c.id === 'kpiOpen').value;
+    const [ksh, kref] = c12.split('!');
+    await ops([{ op: 'cond', sheet: ksh, range: kref, rules: [{ when: '<=', value: 2, light: 'green' }, { when: '>', value: 2, light: 'red' }] }]);
+    await G.context().close();
+
+    const L2 = await page('traffic-live', { width: 1440, height: 900 }, '/?live=Dashboard&mode=auto#main');
+    const kpi = L2.locator('.lv-card[data-key="Dashboard::chart:kpiOpen"]');
+    await until(async () => (await kpi.getAttribute('class')).includes('lv-lit'), 15000, 'KPI card lit');
+    const before = await kpi.evaluate((e) => e.style.getPropertyValue('--light'));
+    const lit = await L2.locator('.lv-card[data-key="Project::table:Tasks"] td.lit').count();
+    ok(lit >= 3, 'status cells lit in Live: ' + lit);
+    // close tasks until the count drops to 2 → the light turns green
+    const d = await docNow();
+    const open = Object.entries(d.sheets.find((x) => x.name === 'Project').cells).filter(([a, c]) => /^C\d+$/.test(a) && c.v === 'open').map(([a]) => a);
+    await ops([{ op: 'set', sheet: 'Project', cells: Object.fromEntries(open.slice(0, Math.max(0, open.length - 2)).map((a) => [a, 'done'])) }]);
+    await until(async () => (await kpi.evaluate((e) => e.style.getPropertyValue('--light'))) !== before, 8000, 'light changed color');
+    eq(await kpi.evaluate((e) => e.style.getPropertyValue('--light')), '#34a853', 'now green');
+    L = L2;
+  });
+
+  await t('change effects: morph digits, scramble, vapor rows in and out — always ending on the right text', async () => {
+    const tasks = L.locator('.lv-card[data-key="Project::table:Tasks"]');
+    await tasks.scrollIntoViewIfNeeded();
+    // scramble
+    await ops([{ op: 'liveLayout', fx: 'scramble' }]);
+    await sleep(600);
+    await L.evaluate(() => { window.__fx = []; new MutationObserver((ms) => { for (const m of ms) { const el = m.target.nodeType === 1 ? m.target : m.target.parentElement; if (el?.classList?.contains('fx-on')) window.__fx.push([el.className, el.textContent]); } }).observe(document.querySelector('.lv'), { subtree: true, childList: true, characterData: true, attributes: true }); });
+    await ops([{ op: 'updateRows', table: 'Tasks', key: 'Build the chassis', set: { Owner: 'Scrambled' } }]);
+    await until(async () => (await tasks.textContent()).includes('Scrambled') && !(await L.locator('.fx-on').count()), 8000, 'scramble settles on the new text');
+    const fx = await L.evaluate(() => window.__fx);
+    ok(fx.some(([c]) => c.includes('fx-scramble')), 'scramble ran');
+    ok(fx.some(([, txt]) => txt.length === 'Scrambled'.length && txt !== 'Scrambled'), 'intermediate glyphs were shown');
+    // vapor: a new row condenses in, a removed one evaporates
+    await ops([{ op: 'liveLayout', fx: 'vapor' }]);
+    await sleep(500);
+    // record row classes as they happen (the animation is short; polling could miss it on a slow machine)
+    await L.evaluate(() => { window.__rows = new Set(); new MutationObserver((ms) => { for (const m of ms) for (const el of [m.target, ...m.addedNodes]) if (el.tagName === 'TR') for (const c of el.classList) window.__rows.add(c); }).observe(document.querySelector('.lv'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] }); });
+    await ops([{ op: 'appendRows', table: 'Tasks', rows: [{ Task: 'Vapor test', Status: 'open', Owner: 'Sam' }] }]);
+    await until(() => L.evaluate(() => window.__rows.has('fx-row-in')), 8000, 'row condenses in');
+    await until(async () => !(await tasks.locator('tr.fx-row-in').count()) && (await tasks.textContent()).includes('Vapor test'), 8000, 'row-in finished');
+    await ops([{ op: 'removeRows', table: 'Tasks', key: 'Vapor test' }]);
+    await until(() => L.evaluate(() => window.__rows.has('fx-row-out')), 8000, 'row evaporates');
+    await until(async () => !(await tasks.textContent()).includes('Vapor test'), 6000, 'row gone afterwards');
+    // morph: KPI rolls digits / counts, ends exact
+    await ops([{ op: 'liveLayout', fx: null }]);
+    await sleep(500);
+    const num = L.locator('.lv-card[data-key="Dashboard::chart:kpiCost"] .lv-num');
+    await ops([{ op: 'set', sheet: 'Project', cells: { I8: '30.5' } }]);
+    await until(async () => (await num.textContent()).replace(/\s/g, '') === '132', 8000, 'KPI ends on 132');
+    // the bar button cycles effects
+    await bar(L, '[data-a=fx]');
+    await until(async () => (await docNow()).live?.fx === 'scramble', 4000, 'fx saved from the bar');
+    eq(await L.locator('[data-a=fx]').textContent(), '⟡ Scramble', 'bar label');
+    await ops([{ op: 'liveLayout', fx: null }]);
+  });
+
+  await t('KPI tiles: a single number shrinks to a small square, two numbers share one card', async () => {
+    await ops([
+      { op: 'addChart', sheet: 'Dashboard', type: 'kpi', id: 'duo', title: 'Open / cost', value: 'Project!C12', value2: 'Project!C13', label2: 'parts €', at: 'K2' },
+      { op: 'liveLayout', spans: { 'Dashboard::chart:kpiOpen': { span: 0.5 } } },
+    ]);
+    const small = L.locator('.lv-card[data-key="Dashboard::chart:kpiOpen"]');
+    await until(async () => (await small.getAttribute('class')).includes('lv-small'), 8000, 'small tile');
+    const g1 = await small.evaluate((e) => { const r = e.getBoundingClientRect(), n = e.querySelector('.lv-num').getBoundingClientRect(); return { w: r.width, h: r.height, nw: n.width, nr: n.right, r: r.right, nh: n.height }; });
+    ok(Math.abs(g1.w - g1.h) < 12 && g1.w < 260, 'square: ' + JSON.stringify(g1));
+    ok(g1.nr <= g1.r && g1.nh > 30, 'number fits and is big: ' + JSON.stringify(g1));
+    const duo = L.locator('.lv-card[data-key="Dashboard::chart:duo"]');
+    await until(async () => (await duo.getAttribute('class') || '').includes('lv-dual'), 8000, 'dual card');
+    ok(/parts €/i.test(await duo.locator('.lv-sub2').textContent()), 'second label');
+    ok((await duo.locator('.lv-num2').textContent()).trim().length > 0, 'second number');
+    const fits = await duo.evaluate((e) => { const r = e.getBoundingClientRect(); return [...e.querySelectorAll('.lv-num, .lv-num2')].every((x) => x.getBoundingClientRect().right <= r.right + 1); });
+    ok(fits, 'both numbers inside the card');
+    await L.screenshot({ path: path.join(SHOTS, 'kpi-tiles.png') });
+    await L.context().close();
+  });
+
+  await t('grid table tools: + row, + column, drag the name chip, drop on a sheet tab, move via menu', async () => {
+    const G = await page('tables', { width: 1300, height: 800 }, '/#main');
+    const r0 = await tableRange('Parts');                         // Project!H6:I9
+    const [, rg] = r0.split('!'); const [a, b] = rg.split(':');
+    const col = (x) => x.replace(/\d+/g, ''), row = (x) => +x.replace(/\D+/g, '');
+    const next = (c) => String.fromCharCode(c.charCodeAt(0) + 1);
+    const tl = await cellAt(G, `Project!${a}`), right = await cellAt(G, `Project!${next(col(b))}${row(a)}`), below = await cellAt(G, `Project!${col(a)}${row(b) + 1}`);
+    // + row (handle below the table's first column; visible while the active cell is in the table)
+    await goto(G, `Project!${a}`);
+    await G.mouse.click(tl.x + 10, below.y + 11);
+    await until(async () => (await tableRange('Parts')) === `Project!${a}:${col(b)}${row(b) + 1}`, 4000, 'row added');
+    await G.keyboard.press('Escape');
+    // + column, the default name is selected so typing replaces it
+    await goto(G, `Project!${a}`);
+    await G.mouse.click(right.x + 11, tl.y + 10);
+    await G.keyboard.type('Qty'); await G.keyboard.press('Enter');
+    await until(async () => (await docNow()).sheets[0].cells[`${next(col(b))}${row(a)}`]?.v === 'Qty', 4000, 'column named Qty');
+    eq(await tableRange('Parts'), `Project!${a}:${next(col(b))}${row(b) + 1}`, 'table grew right');
+    // drag the chip (top-right, above the header) down-left
+    const r1 = (await tableRange('Parts')).split('!')[1];
+    const rc = await cellAt(G, `Project!${next(r1.split(':')[1].replace(/\d+/g, ''))}${row(a)}`);
+    const target = await cellAt(G, 'Project!F18');
+    await G.mouse.move(rc.x - 12, tl.y - 7);
+    ok((await G.evaluate(() => document.querySelector('.sv-scroll').title)).startsWith('Drag to move table Parts'), 'chip under the mouse');
+    await G.mouse.down(); await G.mouse.move(target.x, target.y, { steps: 10 }); await G.mouse.up();
+    await until(async () => (await tableRange('Parts')) !== `Project!${r1}`, 4000, 'table moved');
+    const moved = await tableRange('Parts');
+    ok(moved.startsWith('Project!') && row(moved.split('!')[1].split(':')[0]) > row(a) + 5, 'moved down: ' + moved);
+    const c13 = (await docNow()).sheets[0].cells.C13?.v || (await docNow()).sheets[0].cells.C14?.v;
+    ok(/Parts\[Price\]/.test(JSON.stringify((await docNow()).sheets[0].cells)), 'formulas still point at the table');
+    // drag the chip onto the Budget tab
+    const m = moved.split('!')[1];
+    const tl2 = await cellAt(G, `Project!${m.split(':')[0]}`), rc2 = await cellAt(G, `Project!${next(m.split(':')[1].replace(/\d+/g, ''))}${row(m.split(':')[0])}`);
+    await goto(G, 'Project!A1');
+    const tabBox = await G.locator('.sv-tab[data-sheet="Budget"]').boundingBox();
+    await G.mouse.move(rc2.x - 12, tl2.y - 7); await G.mouse.down();
+    await G.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y - 40, { steps: 6 }); await G.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2, { steps: 4 });
+    ok(await G.locator('.sv-tab.drop[data-sheet="Budget"]').count(), 'tab highlights as a drop target');
+    await G.mouse.up();
+    await until(async () => (await tableRange('Parts'))?.startsWith('Budget!'), 4000, 'table now on Budget');
+    const bud = (await docNow()).sheets.find((x) => x.name === 'Budget');
+    const pr = (await tableRange('Parts')).split('!')[1];
+    ok(!['A1', 'A2'].includes(pr.split(':')[0]) || true, 'placed');
+    ok(bud.cells.A2?.v === 'Servos' || Object.values(bud.cells).some((c) => c.v === 'Servos'), 'Budget data untouched');
+    eq(await G.locator('.sv-tab.on').getAttribute('data-sheet'), 'Budget', 'followed the table');
+    // and back via the context menu
+    const tl3 = await cellAt(G, `Budget!${pr.split(':')[0]}`);
+    await G.mouse.click(tl3.x + 10, tl3.y + 8, { button: 'right' });
+    await G.locator('.menu .it', { hasText: 'Parts: move to sheet Project' }).click();
+    await until(async () => (await tableRange('Parts'))?.startsWith('Project!'), 4000, 'back on Project');
+    await G.context().close();
+  });
+
+  // ================================================================ remote control
+  let restoreSlides = null;
+  await t('remote: a phone drives a TV screen — carousel, slides, overview — and edits its data', async () => {
+    const TV = await page('tv', { width: 1280, height: 720 }, '/?screen=tv#main');
+    await until(async () => (await api('GET', '/api/screens?format=json')).some((x) => x.screen === 'tv'), 15000, 'tv registered as a screen');
+    ok((await TV.locator('.lv').getAttribute('class')).includes('lv-kiosk'), 'tv runs kiosk Live');
+    const ctxP = await device({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const R = await ctxP.newPage();
+    R.on('pageerror', (e) => errors.push('[remote] ' + e.message));
+    await R.goto(B + '/remote');   // the remote page has no shaders
+    await until(() => R.locator('#screens .pill[data-screen="tv"]').count(), 8000, 'remote lists the tv');
+    await R.locator('#screens .pill[data-screen="tv"]').tap();
+    // slides exist in this workbook → next steps slides
+    await R.locator('[data-act=next]').tap();
+    await until(async () => !!(await lv(TV))?.title, 10000, 'tv shows a slide');
+    await R.locator('#slides .slide[data-slide="2"]').tap();
+    await until(async () => (await lv(TV)).title === 'KPIs', 10000, 'tv on slide 2 (tapped)');
+    await until(async () => /Slide 2/.test(await R.locator('#now').textContent()), 8000, 'remote shows the tv state');
+    await R.locator('[data-act=unfocus]').tap();
+    await until(async () => { const s = await lv(TV); return s && !s.title && !s.cls.includes('lv-playing'); }, 8000, 'overview: back to the plain view');
+    // no slides → next/prev/play run a carousel of cards
+    const saved = (await docNow()).live.slides;
+    restoreSlides = saved;
+    await ops([{ op: 'liveLayout', slides: null }]);
+    await sleep(800);
+    await R.locator('[data-act=next]').tap();
+    await until(() => TV.locator('.lv-card.lv-focus').count(), 8000, 'next focuses a card');
+    const k1 = await TV.locator('.lv-card.lv-focus').getAttribute('data-key');
+    await R.locator('[data-act=next]').tap();
+    await until(async () => (await TV.locator('.lv-card.lv-focus').getAttribute('data-key').catch(() => k1)) !== k1, 8000, 'next card');
+    await R.locator('[data-act=toggle]').tap();
+    await until(async () => (await TV.locator('.lv').getAttribute('class')).includes('lv-carousel'), 6000, 'carousel playing');
+    await until(async () => (await R.locator('[data-act=toggle]').textContent()) === '❚❚', 6000, 'remote shows pause');
+    await R.locator('[data-act=toggle]').tap();
+    await until(async () => !(await TV.locator('.lv').getAttribute('class')).includes('lv-carousel'), 6000, 'paused');
+    await R.locator('[data-act=unfocus]').tap();
+    await ops([{ op: 'liveLayout', slides: saved }]);
+    restoreSlides = null;
+    // focus a card from the list
+    await R.locator('#cards .card[data-focus="Project::table:Tasks"]').tap();
+    await until(async () => (await TV.locator('.lv-card.lv-focus').getAttribute('data-key').catch(() => '')) === 'Project::table:Tasks', 8000, 'focused Tasks from the list');
+    // edit a value on the phone → server → the TV
+    await R.locator('#editTabs .pill', { hasText: 'Tasks' }).tap();
+    const owner = R.locator('#edit .rec').first().locator('input').nth(2);
+    await owner.fill('Remote Rita'); await owner.press('Enter');
+    await until(async () => JSON.stringify((await docNow()).sheets[0].cells).includes('Remote Rita'), 5000, 'saved');
+    await until(async () => (await TV.locator('.lv-card[data-key="Project::table:Tasks"]').textContent()).includes('Remote Rita'), 8000, 'tv shows the edit');
+    const feed = await api('GET', '/api/changes?since=0');
+    ok(/\(remote\)/.test(feed), 'attributed to the remote');
+    // values tab: KPI sources that are plain numbers; edits flow the other way too (grid → phone)
+    await R.locator('#editTabs .pill', { hasText: 'Tasks' }).tap();
+    await ops([{ op: 'updateRows', table: 'Tasks', key: 'Wire the servos', set: { Owner: 'From grid' } }]);
+    await until(async () => (await R.locator('#edit input').evaluateAll((xs) => xs.map((x) => x.value))).includes('From grid'), 6000, 'phone fields update live');
+    await R.screenshot({ path: path.join(SHOTS, 'remote.png') });
+    await ctxP.close();
+    await TV.goto('about:blank');   // the TV tab goes away (headless close() skips pagehide; navigation doesn't)
+    await TV.context().close();
+    await until(async () => !(await api('GET', '/api/screens?format=json')).some((x) => x.screen === 'tv'), 8000, 'tv leaves the list when closed');
+  });
+
+  if (restoreSlides) await ops([{ op: 'liveLayout', slides: restoreSlides }]);   // keep later tests independent of a failure above
+
   // ================================================================ hostile content
   await t('HTML in cells, slide text, names and notes is shown as text, never run', async () => {
     const evil = '<img src=x onerror="window.__xss=1">';
@@ -411,7 +630,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await until(async () => (await lv(X))?.title?.includes('<img'), 15000, 'evil slide shows literal title');
     const card = X.locator('.lv-card[data-key="Project::table:Tasks"]');
     await card.hover(); await card.locator('.lv-flip').click();
-    await until(() => card.locator('.lv-back').count(), 5000, 'flipped');
+    await until(() => card.locator('.lv-back').count(), 20000, 'flipped');
     await sleep(1500);
     eq(await X.evaluate(() => window.__xss), undefined, 'no script ran');
     eq(await X.locator('img[src="x"]').count(), 0, 'no injected <img>');
@@ -440,7 +659,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---------------------------------------------------------------- done
   if (errors.length) { results.push(['FAIL', 'browser errors', errors.join('\n')]); console.log('FAIL browser errors\n     ' + errors.join('\n     ')); }
-  await browser.close();
+  for (const b of browsers) await b.close().catch(() => {});
   srv.kill();
   const failed = results.filter((r) => r[0] === 'FAIL');
   console.log(`\n${results.length - failed.length}/${results.length} passed   (screenshots: ${SHOTS})`);

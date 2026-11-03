@@ -48,6 +48,7 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm fmt A1:E1 '{"b":true,"fill":"#fff2cc"}'
   cm border A1:C3 outer [thick] ['#d93025']   all|inner|horizontal|vertical|outer|left|top|right|bottom|clear
   cm merge A1:C1 [all|horizontal|vertical] | cm unmerge A1:C1
+  cm traffic B7:B10 '<100:green' 'between 100 200:amber' '>200:red'   (traffic lights; ':#hex' for any fill; 'off' removes)
   cm note B2 "text"
   cm add-sheet Name | rename-sheet Old New
   cm read @Tasks                    a named table as records:  [7] Task: Wire the servos · Status: open
@@ -62,13 +63,15 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm json Tasks                    table as JSON array
   cm put Tasks file.json [Sheet!B2]      replace/create table from JSON array (- = stdin)
   cm chart column B6:C10 --at K2 --title "Prices"      types: column bar line area pie kpi
-  cm chart pie @Parts --x Part --y Price  |  cm chart kpi C12 --title "Open tasks"
+  cm chart pie @Parts --x Part --y Price  |  cm chart kpi C12 --title "Open tasks" [--value2 C13 --label2 "cost"] [--size small]
   cm chart-show chart1             the chart's live data as text
   cm chart-set chart1 type=line title="Uusi"  |  cm chart-rm chart1
   cm image B2 photo.png            upload + =IMAGE("/assets/…") in the cell
   cm export Dashboard [md|html]    sheet as a document (headings, tables, charts, KPIs)
   cm present Dashboard [chart:status|Tasks|C12] [--combined]   put the user's screen into Live / Focus mode
   cm present off
+  cm screens                       open Live views (TV, laptop…) — target one with --screen id
+  cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
   cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
   cm people                        who else is here (and where / in Live)
   cm slides                        list slides  ·  cm present --slide 1  (play from slide 1)
@@ -117,6 +120,17 @@ switch (cmd) {
   case 'border': case 'borders': await ops([{ op: 'borders', range: args[0], type: args[1] || 'all', style: args[2], color: args[3] }]); break;
   case 'merge': await ops([{ op: 'merge', range: args[0], type: args[1] || 'all' }]); break;
   case 'unmerge': await ops([{ op: 'unmerge', range: args[0] }]); break;
+  case 'traffic': {
+    // cm traffic B7:B10 '<100:green' 'between 100 200:amber' '>200:red'   ·   cm traffic B7:B10 off   ·   --id c1 to replace
+    const { parseRule } = await import('../public/shared/cond.js');
+    const ii = args.indexOf('--id'); const id = ii >= 0 ? args.splice(ii, 2)[1] : undefined;
+    const [range, ...rs] = args;
+    if (rs[0] === 'off') { await ops([{ op: 'removeCond', range }]); break; }
+    let rules;
+    try { rules = rs.map(parseRule); } catch (e) { console.error(e.message); process.exit(1); }
+    await ops([{ op: 'cond', range, rules, ...(id ? { id } : {}) }]);
+    break;
+  }
   case 'note': await ops([{ op: 'note', cell: args[0], text: args.slice(1).join(' ') || null }]); break;
   case 'add-sheet': await ops([{ op: 'addSheet', name: args[0] }]); break;
   case 'rename-sheet': await ops([{ op: 'renameSheet', sheet: args[0], name: args[1] }]); break;
@@ -146,11 +160,16 @@ switch (cmd) {
   }
   case 'chart': {
     const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
-    const at = flag('at'), title = flag('title'), x = flag('x'), y = flag('y'), label = flag('label'), sheet = flag('sheet');
+    const at = flag('at'), title = flag('title'), x = flag('x'), y = flag('y'), label = flag('label'), sheet = flag('sheet'), value2 = flag('value2'), label2 = flag('label2'), size = flag('size');
     const [type, src] = args;
-    const o = { op: 'addChart', type, at, title, sheet, label };
+    const o = { op: 'addChart', type, at, title, sheet, label, value2, label2 };
     if (type === 'kpi') o.value = src; else if (src.startsWith('@')) { o.table = src.slice(1); o.x = x; o.y = y ? y.split(',') : undefined; } else o.range = src;
-    await ops([o]);
+    if (size !== 'small') { await ops([o]); break; }
+    // --size small: a square tile in Live's combined layout
+    const r = JSON.parse(await call('POST', '/api/ops', { doc: DOC || undefined, by: BY, ops: [o] }));
+    const ch = r.changes.find((c) => c.k === 'chart');
+    const spans = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc.live?.spans || {};
+    await ops([{ op: 'liveLayout', spans: { ...spans, [`${ch.sheet}::chart:${ch.id}`]: { span: 0.5 } } }]);
     break;
   }
   case 'chart-show': out(await call('GET', '/api/chart?' + qs({ doc: DOC, id: args[0] }))); break;
@@ -197,13 +216,17 @@ switch (cmd) {
     }
     break;
   }
+  case 'screens': out(await call('GET', '/api/screens')); break;
   case 'present': {
-    if (args[0] === 'off') { await call('POST', '/api/present', { off: true, doc: DOC || undefined }); out('ok'); break; }
+    const si2 = args.indexOf('--screen'); const screen = si2 >= 0 ? args.splice(si2, 2)[1] : undefined;
+    const act = ['next', 'prev', 'play', 'pause', 'toggle', 'unfocus'].find((a) => args[0] === a || args[0] === '--' + a);
+    if (act) { await call('POST', '/api/present', { action: act, screen, doc: DOC || undefined, by: BY }); out('ok'); break; }
+    if (args[0] === 'off') { await call('POST', '/api/present', { off: true, screen, doc: DOC || undefined }); out('ok'); break; }
     const si = args.indexOf('--slide');
-    if (si >= 0) { await call('POST', '/api/present', { doc: DOC || undefined, slide: +args[si + 1] || 1, by: BY }); out('ok'); break; }
+    if (si >= 0) { await call('POST', '/api/present', { doc: DOC || undefined, slide: +args[si + 1] || 1, screen, by: BY }); out('ok'); break; }
     const combined = args.includes('--combined');
     const [sheet, focus] = args.filter((a) => a !== '--combined');
-    await call('POST', '/api/present', { doc: DOC || undefined, sheet, focus, mode: combined ? 'auto' : undefined, by: BY });
+    await call('POST', '/api/present', { doc: DOC || undefined, sheet, focus, mode: combined ? 'auto' : undefined, screen, by: BY });
     out('ok');
     break;
   }

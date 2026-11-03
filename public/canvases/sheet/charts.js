@@ -48,7 +48,7 @@ export function drawChart(g, r, ch, data, z, selected, theme = 'light') {
   }
   const area = { x: r.x + pad, y: top, w: r.w - 2 * pad, h: r.y + r.h - pad - top };
   try {
-    if (data.kpi) kpi(g, r, ch, data.kpi, z, f);
+    if (data.kpi) kpi(g, r, ch, data.kpi, z, f, data.kpi2);
     else if (!data.series.length || !data.labels.length) empty(g, area, f);
     else if (ch.type === 'pie') pie(g, area, data, z, f);
     else axisChart(g, area, ch, data, z, f);
@@ -66,7 +66,21 @@ function empty(g, a, f, msg = 'no numeric data') {
   g.fillText(msg, a.x + a.w / 2, a.y + a.h / 2);
 }
 
-function kpi(g, r, ch, k, z, f) {
+function kpi(g, r, ch, k, z, f, k2) {
+  if (k2) {
+    // two figures side by side; the second one smaller, with its own caption
+    const w1 = r.w * 0.58;
+    kpi(g, { ...r, w: w1 }, ch, k, z, f);
+    const v2 = k2.value, t2 = typeof v2 === 'number' ? v2.toLocaleString(undefined, { maximumFractionDigits: 2 }) : k2.text || '—';
+    let size = Math.min(r.h * 0.32, 40 * z);
+    g.font = `500 ${size}px system-ui, sans-serif`;
+    while (size > 9 && g.measureText(t2).width > r.w - w1 - 18 * z) { size -= 2; g.font = `500 ${size}px system-ui, sans-serif`; }
+    g.textAlign = 'right'; g.textBaseline = 'alphabetic'; g.fillStyle = isErr(v2) ? '#d93025' : T.value;
+    g.fillText(t2, r.x + r.w - 14 * z, r.y + r.h - 16 * z);
+    if (k2.label) { g.fillStyle = MUTED; g.font = `500 ${f(11)}px system-ui, sans-serif`; g.fillText(ellipsize(g, k2.label, r.w - w1 - 18 * z), r.x + r.w - 14 * z, r.y + r.h - 16 * z - size - 4 * z); }
+    g.textAlign = 'left';
+    return;
+  }
   const label = ch.title || k.label;
   g.textAlign = 'left';
   g.fillStyle = MUTED; g.font = `500 ${f(13)}px system-ui, sans-serif`; g.textBaseline = 'top';

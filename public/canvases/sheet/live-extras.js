@@ -110,19 +110,25 @@ const box = (el) => { const x = el.offsetLeft, y = el.offsetTop, w = el.offsetWi
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 // ------------------------------------------------------------------ flip a card to its sheet side
-export async function flip(el, makeBack) {
-  const anim = (from, to) => el.animate([{ transform: `perspective(1400px) rotateY(${from}deg)` }, { transform: `perspective(1400px) rotateY(${to}deg)` }], { duration: 210, easing: from === 0 ? 'cubic-bezier(.5,0,1,1)' : 'cubic-bezier(0,0,.5,1)' }).finished;
-  await anim(0, 90).catch(() => {});
-  let back = el.querySelector(':scope > .lv-back');
-  if (back) back.remove();
-  else {
-    back = document.createElement('div');
-    back.className = 'lv-back';
-    el.append(back);
-    makeBack(back);
-  }
-  el.classList.toggle('lv-flipped', !!el.querySelector(':scope > .lv-back'));
-  await anim(-90, 0).catch(() => {});
+export function flip(el, makeBack) {
+  // State changes at once (and the content swaps on a timer at the half-turn), so a slow screen never ends up
+  // half-flipped; the rotation is decoration on top.
+  const toBack = !el.querySelector(':scope > .lv-back');
+  el.classList.toggle('lv-flipped', toBack);
+  el.animate([
+    { transform: 'perspective(1400px) rotateY(0deg)' },
+    { transform: 'perspective(1400px) rotateY(90deg)', offset: 0.5, easing: 'cubic-bezier(0,0,.5,1)' },
+    { transform: 'perspective(1400px) rotateY(0deg)' },
+  ], { duration: 420, easing: 'cubic-bezier(.5,0,1,1)' });
+  setTimeout(() => {
+    const back = el.querySelector(':scope > .lv-back');
+    if (!el.classList.contains('lv-flipped')) { back?.remove(); return; }
+    if (back) return;
+    const b = document.createElement('div');
+    b.className = 'lv-back';
+    el.append(b);
+    makeBack(b);
+  }, 200);
 }
 
 /** The back side: the cells behind a card, A1 addresses, raw formulas — plus recent history. */

@@ -11,8 +11,8 @@ Zero dependencies. Node 22.13+ and a browser. Works headless.
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 31 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
-npm run e2e        # 18 browser tests (Playwright): two users, Live, slides, adaptive ink, flip, phone, XSS
+npm test           # 35 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
+npm run e2e        # 23 browser tests (Playwright): two users, Live, slides, traffic lights, effects, table tools, remote, phone, XSS
 ```
 
 ![The grid](docs/grid.jpg)
@@ -24,11 +24,13 @@ npm run e2e        # 18 browser tests (Playwright): two users, Live, slides, ada
 - [Why](#why)
 - [The grid](#the-grid)
 - [Named tables](#named-tables-structured-data)
+- [Traffic lights](#traffic-lights)
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
 - [Live mode](#live-mode)
 - [Slides](#slides)
 - [Multi-user and history](#multi-user-and-history)
+- [Remote control](#remote-control)
 - [For agents](#for-agents)
 - [Versioning](#versioning)
 - [Architecture](#architecture)
@@ -61,6 +63,7 @@ Canvas-rendered and virtualized (no DOM table), so 100k+ rows scroll smoothly. B
 | Formatting | fonts (8 families), sizes 9–72 px, bold/italic/strike, colors, alignment, wrap, vertical align, **borders** (all/inner/outer/sides; thin, medium, thick, dashed, dotted, double), **merged cells**, notes, column/row resize + double-click autofit |
 | Structure | insert/delete rows and columns, undo/redo with exact inverses, hide gridlines for a clean dashboard look |
 | Agent presence | the agent's edits flash purple with a labelled box; a dot on a tab means the agent changed another sheet |
+| Tables | drag a table by its **name chip** to move it (refs follow); **drop it on a sheet tab** to move it to that sheet (it lands in free space); **＋** handles under and beside the table you're in add a row or a column; right-click → *move to sheet …* |
 
 ## Named tables (structured data)
 
@@ -71,6 +74,23 @@ defines the columns; the rest are records.
 - Typing directly under a table grows it. Right-click a table for add row / add column / delete record / rename / remove.
 - Formulas can say `=COUNTIF(Tasks[Status],"open")`. Tables move with cut/paste and row/column inserts.
 - The agent works in records: `cm read @Tasks`, `cm update Tasks 'Wire the servos' Status=done`, `cm add Tasks '{…}'`.
+
+## Traffic lights
+
+Color cells by their value — 🚦 in the toolbar or right-click → *Traffic lights…* (conditional formatting).
+
+- Rules: `<` `≤` `>` `≥` `=` `≠` *between* *contains* *empty* *not empty*; the first matching rule wins. Thresholds can
+  be formulas (`=Settings!B1`), so a budget cell can move the line.
+- The editor guesses a starting set from the data: numbers get green / amber / red thresholds, words like
+  *done / open / late* get their obvious colors.
+- Lights follow their cells through moves, row/column inserts and deletes, and moves to another sheet — like
+  tables do. Undo is exact.
+- In Live, lit table cells get a colored glow, and a KPI whose source cell is lit gets a pulsing status light. When the
+  value crosses a threshold the color cross-fades.
+- Agent: `cm traffic Budget!D2:D5 '<20:green' 'between 20 60:amber' '>60:red'` (`':#hex'` for any color; `off` removes).
+
+![Traffic-light editor](docs/traffic-editor.jpg)
+![Traffic lights in Live: a red status light on a KPI, lit status cells](docs/live-traffic.jpg)
 
 ## SQL and JSON
 
@@ -167,6 +187,30 @@ cm live                                  # read back what the screen shows right
 (`● Dashboard::chart:status  pie "Task status"  @953,240 431×300  pie: open 3, done 1`), so the agent can reason about
 the layout the user is looking at.
 
+### Change effects
+
+When the data behind the screen changes, the screen shows it (⟡ in the bar, stored in the workbook):
+
+| effect | numbers | text | rows |
+|---|---|---|---|
+| **morph** (default) | KPIs count to the new value, digits roll | glyphs churn into the new word | new rows condense in, removed rows evaporate |
+| **scramble** | glow, then the characters churn and lock in left to right | same | same |
+| **vapor** | the old value drifts up and blurs away, the new one condenses | same | same |
+| **glow** | the new value lights up and fades back | same | – |
+
+Charts tween between values. Effects always end on the exact new text, respect *reduce motion*, and never touch the
+cell you're typing in.
+
+![Vapor: a new owner condensing into the table](docs/fx-vapor.jpg)
+
+### KPI tiles
+
+KPI cards size their number to the card, so a KPI can be a **small square tile** (drag it narrow, or
+`cm chart kpi C12 --size small`) next to wide ones — the combined grid has half-width units. A KPI can also show
+**two figures** (`--value2 C13 --label2 "cost"`: *3 open · 126 €*), in Live and in the grid.
+
+![Small square KPI tiles and a two-figure KPI](docs/kpi-tiles.jpg)
+
 ### Adaptive ink, flip, relations
 
 - **Adaptive ink.** Live samples the background behind every card (shader or image) and switches that card to dark
@@ -219,6 +263,24 @@ Deep link: `/?slides=1` starts the show (add `&kiosk=1` for a wall screen).
   cell back through moves and row/column inserts, so it survives cut/paste. Agents: `cm history Project!C8`,
   `cm history @Tasks`.
 - Every batch is atomic: one undo reverts the whole batch, whether it was a paste, a SQL write-back or an agent edit.
+
+## Remote control
+
+Any open Live view is a **screen**. Open `/?screen=tv` on the TV (it goes straight to full-screen combined Live) and
+`/remote` on your phone (📱 Remote in the top bar):
+
+- **◀ ⏯ ▶** step through the slides — or, if there are none, through the cards as a **carousel** (each card
+  full-screen in turn; ⏯ auto-advances). Swipe the buttons left/right. *Overview* goes back to everything.
+- Tap a slide, a sheet, *Combined*, or any card on the screen to show it.
+- **Edit data** from the phone: every table as a form (formulas shown, not editable), plus *Values* — the plain
+  numbers behind KPIs. Fields offer the values a column already has. Edits are normal versioned edits, attributed
+  to “… (remote)”, and the TV animates them.
+- Several screens at once; pick one at the top. Agents too: `cm screens`, `cm present next --screen tv`.
+
+<img src="docs/remote.jpg" width="300" alt="The remote on a phone">
+
+Weak wall screen? `/?screen=tv&quality=low` (or `half`, `minimal`, `still`) starts the background at a lower
+resolution; Live also steps down on its own when frames get slow.
 
 ## For agents
 
@@ -302,7 +364,8 @@ Text responses by default; add `format=json` for JSON.
 | `POST /api/assets` | raw image body → `{ url }` |
 | `POST /api/commit` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore` | milestones |
 | `GET /api/selection` · `POST /api/focus` | the user's selection · highlight where the agent works |
-| `POST /api/present` · `GET /api/live` | drive Live / read what it shows |
+| `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, screen}`) / read what a screen shows |
+| `GET /api/screens` | open Live views (TVs, laptops) and what they show |
 | `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history of a cell (move-aware) or a table |
 | `GET /api/presence` · `POST /api/presence` | who is here, where, and in Live |
 | `GET /api/events` | SSE stream of every change and presence update |
@@ -315,7 +378,7 @@ Configuration: `PORT`, `HOST` (default `127.0.0.1` — there is no authenticatio
 - **Grafana dashboard import** — read a Grafana dashboard JSON (panels, grid positions, titles, thresholds) and map it
   onto Live cards and charts. Grafana is AGPL-3.0, so this will be an importer of its JSON format, not a port of its code.
 - **Network graphs** — nodes and edges from two tables (e.g. agents and their messages) as a force layout card.
-- More chart types (scatter, heatmap, sparkline columns in tables), conditional formatting.
+- More chart types (scatter, heatmap, sparkline columns in tables); color scales next to traffic lights.
 - Authentication for anything beyond a trusted LAN.
 
 ## Credits

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f1f">
+  <title>Spread remote</title>
+  <link rel="stylesheet" href="/remote.css">
+  <script type="module" src="/remote.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">▦ <b>Spread</b> remote</div>
+    <span id="conn" title="Live connection"></span>
+  </header>
+  <main>
+    <section id="screens" aria-label="Screens"></section>
+    <section id="now"></section>
+    <section class="transport" aria-label="Controls">
+      <button data-act="prev" aria-label="Previous">◀</button>
+      <button data-act="toggle" class="big" aria-label="Play or pause">▶</button>
+      <button data-act="next" aria-label="Next">▶▶</button>
+      <button data-act="unfocus" class="wide">Overview</button>
+    </section>
+    <section id="modes"></section>
+    <details id="slidesBox" open><summary>Slides</summary><div id="slides"></div></details>
+    <details id="cardsBox" open><summary>On screen</summary><div id="cards"></div></details>
+    <details id="editBox" open><summary>Edit data</summary><div id="editTabs"></div><div id="edit"></div></details>
+  </main>
+  <div id="toast"></div>
+</body>
+</html>

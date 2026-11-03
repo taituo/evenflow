@@ -5,6 +5,7 @@ import {
 } from '../a1.js';
 import { transformFormula, refBox, renameTableRefs, literal } from '../formula.js';
 import { computeAll, Engine, fmtValue } from '../engine.js';
+import { WHEN, LIGHTS, describeRule } from '../cond.js';
 
 export const type = 'sheet';
 const MAX_CELLS_PER_OP = 200000;
@@ -87,6 +88,9 @@ export function apply(st, op) {
     case 'removePanel': return opRemovePanel(st, op);
     case 'slide': return opSlide(st, op);
     case 'removeSlide': return opRemoveSlide(st, op);
+    case 'cond': return opCond(st, op);
+    case 'removeCond': return opRemoveCond(st, op);
+    case 'setConds': return opSetConds(st, op);
     case 'addChart': return opAddChart(st, op);
     case 'updateChart': return opUpdateChart(st, op);
     case 'deleteChart': return opDeleteChart(st, op);
@@ -200,6 +204,7 @@ const preTables = (st) => ({
   tables: Object.fromEntries(st.sheets.map((s) => [s.name, s.tables ? clone(s.tables) : null])),
   merges: Object.fromEntries(st.sheets.map((s) => [s.name, s.merges ? [...s.merges] : null])),
   charts: Object.fromEntries(st.sheets.map((s) => [s.name, s.charts ? clone(s.charts) : null])),
+  conds: Object.fromEntries(st.sheets.map((s) => [s.name, s.conds ? clone(s.conds) : null])),
 });
 const isFormula = (v) => typeof v === 'string' && v[0] === '=';
 const intersects = (a, b) => a.c1 <= b.c2 && b.c1 <= a.c2 && a.r1 <= b.r2 && b.r1 <= a.r2;
@@ -268,9 +273,38 @@ function rewriteAll(st, fn, originOf = () => null) {
       return box.c1 === box.c2 && box.r1 === box.r2 ? null : rangeToString(box);
     }).filter(Boolean);
   }
+  const condMoves = [];
+  for (const sh of st.sheets) {
+    if (!sh.conds) continue;
+    sh.conds = sh.conds.filter((cd) => {
+      const R = parseRange(cd.range);
+      const ref = { sheet: null, a: { c: R.c1, r: R.r1, ac: false, ar: false }, b: { c: R.c2, r: R.r2, ac: false, ar: false } };
+      const out = fn(ref, sh.name, sh);
+      if (out === null) return false;
+      // thresholds written as formulas ("=Settings!B1") follow structure like any reference; origin = this sheet
+      const home = out ? out.sheet : sh.name;
+      for (const rule of cd.rules) for (const k of ['value', 'value2']) {
+        if (typeof rule[k] !== 'string' || rule[k][0] !== '=') continue;
+        rule[k] = transformFormula(rule[k], (fr) => {
+          const resolved = fr.sheet ?? sh.name;
+          const o = fn(fr, resolved, sh);
+          if (o === null) return null;
+          const res = o === undefined ? { ref: fr, sheet: resolved } : o;
+          return { ...res.ref, sheet: !sameName(res.sheet, home) || fr.sheet != null ? res.sheet : null };
+        });
+      }
+      if (out === undefined) return true;
+      cd.range = rangeToString(refBox(out.ref));
+      if (!sameName(out.sheet, sh.name)) { condMoves.push([cd, out.sheet]); return false; }
+      return true;
+    });
+    if (!sh.conds.length) delete sh.conds;
+  }
+  for (const [cd, toName] of condMoves) { const to = st.sheets.find((x) => sameName(x.name, toName)); (to.conds ||= []).push(cd); }
+
   for (const sh of st.sheets) {
     for (const ch of sh.charts || []) {
-      const tr = (str, isRange) => {
+      const tr = (str, isRange, isAnchor) => {
         if (!str) return str;
         const [sn, rs] = splitSheet(str);
         const R = parseRange(rs);
@@ -279,13 +313,14 @@ function rewriteAll(st, fn, originOf = () => null) {
         const out = fn(ref, sn ?? sh.name, sh);
         if (!out) return str;
         const box = refBox(out.ref);
-        if (!isRange && !sameName(out.sheet, sh.name)) return str;
+        if (isAnchor && !sameName(out.sheet, sh.name)) return str;   // a chart stays on its sheet
         const prefix = !sameName(out.sheet, sh.name) || sn != null ? quoteSheet(out.sheet) + '!' : '';
         return prefix + rangeToString(isRange ? box : { c1: box.c1, r1: box.r1, c2: box.c1, r2: box.r1 });
       };
-      ch.at = tr(ch.at, false);
+      ch.at = tr(ch.at, false, true);
       if (ch.range) ch.range = tr(ch.range, true);
       if (ch.value) ch.value = tr(ch.value, false);
+      if (ch.value2) ch.value2 = tr(ch.value2, false);
     }
   }
   for (const [from, t, toName] of moves) {
@@ -519,11 +554,12 @@ function opDeleteSheet(st, op) {
   if (st.sheets.length <= 1) fail('Cannot delete the last sheet');
   const sh = findSheet(st, op.sheet);
   const pre = preCells(st);
+  const preT = preTables(st);
   const index = st.sheets.indexOf(sh);
   const { name, ...data } = clone(sh);
   st.sheets.splice(index, 1);
   rewriteAll(st, (ref, rs) => (sameName(rs, sh.name) ? null : undefined));
-  const inverse = [{ op: 'addSheet', name, index, data }, ...buildRestore(st, pre, (sn, A) => [sn, A], null, name)];
+  const inverse = [{ op: 'addSheet', name, index, data }, ...buildRestore(st, pre, (sn, A) => [sn, A], null, name), preT];
   return { inverse, changes: [{ k: 'sheet', action: 'delete', name: sh.name }] };
 }
 
@@ -606,9 +642,54 @@ function opView(st, op) {
   };
 }
 
+// ------------------------------------------------------------------ conditional formatting (traffic lights)
+function checkRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) fail('cond needs rules');
+  return rules.map((r) => {
+    if (!WHEN.includes(r.when)) fail(`Unknown rule "${r.when}" (${WHEN.join(' ')})`);
+    if (r.light && !LIGHTS[r.light]) fail(`Unknown light "${r.light}" (green amber red blue gray)`);
+    if (!r.light && !r.style) fail('A rule needs light or style');
+    const o = { when: r.when };
+    if (r.value !== undefined) o.value = r.value;
+    if (r.value2 !== undefined) o.value2 = r.value2;
+    if (r.light) o.light = r.light === 'yellow' ? 'amber' : r.light;
+    if (r.style) o.style = Object.fromEntries(Object.entries(r.style).filter(([k]) => ['fill', 'color', 'b', 'dot'].includes(k)));
+    return o;
+  });
+}
+/** cond: { sheet?, range, rules, id? } — add (or replace by id) a set of rules on a range. */
+function opCond(st, op) {
+  const { sh, R } = target(st, op.range, op.sheet);
+  const rules = checkRules(op.rules);
+  const old = sh.conds ? clone(sh.conds) : null;
+  const list = sh.conds ||= [];
+  let id = op.id ? String(op.id) : null;
+  const i = id ? list.findIndex((x) => x.id === id) : -1;
+  if (!id) { let n = list.length + 1; while (list.some((x) => x.id === 'c' + n)) n++; id = 'c' + n; }
+  const cd = { id, range: rangeToString(R), rules };
+  if (i >= 0) list[i] = cd; else list.push(cd);
+  return { inverse: [{ op: 'setConds', sheet: sh.name, conds: old }], changes: [{ k: 'layout', sheet: sh.name, what: `traffic lights ${id} on ${cd.range}: ${rules.map(describeRule).join(', ')}` }] };
+}
+/** removeCond: { sheet?, id } or { sheet?, range } (removes every cond whose range intersects) */
+function opRemoveCond(st, op) {
+  const sh = findSheet(st, op.sheet ?? (op.range ? splitSheet(op.range)[0] : undefined));
+  const old = sh.conds ? clone(sh.conds) : null;
+  const R = op.range ? parseRange(splitSheet(op.range)[1]) : null;
+  const keep = (sh.conds || []).filter((cd) => (op.id ? cd.id !== op.id : !intersects(parseRange(cd.range), R)));
+  if (keep.length === (sh.conds || []).length) fail('No such traffic-light rule');
+  if (keep.length) sh.conds = keep; else delete sh.conds;
+  return { inverse: [{ op: 'setConds', sheet: sh.name, conds: old }], changes: [{ k: 'layout', sheet: sh.name, what: `traffic lights removed ${op.id || op.range}` }] };
+}
+function opSetConds(st, op) {
+  const sh = findSheet(st, op.sheet);
+  const old = sh.conds ? clone(sh.conds) : null;
+  if (op.conds?.length) sh.conds = clone(op.conds); else delete sh.conds;
+  return { inverse: [{ op: 'setConds', sheet: sh.name, conds: old }], changes: [{ k: 'layout', sheet: sh.name, what: 'traffic lights' }] };
+}
+
 // ------------------------------------------------------------------ charts (floating, live)
 export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi'];
-const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors'];
+const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors'];
 export function allCharts(st) { const out = []; for (const sh of st.sheets) for (const ch of sh.charts || []) out.push({ sh, ch }); return out; }
 function findChart(st, id) {
   const x = allCharts(st).find((x) => x.ch.id === id);
@@ -662,7 +743,15 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
     const s2 = findSheet(st, sn ?? sh.name);
     const p = parseAddr(a);
     const v = p ? en.value(s2, p.c, p.r) : null;
-    return { kpi: { value: v, text: fmtValue(v), label: ch.label || ch.title || '' } };
+    const out = { kpi: { value: v, text: fmtValue(v), label: ch.label || ch.title || '' } };
+    if (ch.value2) {
+      // a second figure on the same card ("3 / 5", "open · done", "this week · last week")
+      const [sn2, a2] = splitSheet(ch.value2);
+      const s3 = findSheet(st, sn2 ?? sh.name), p2 = parseAddr(a2);
+      const v2 = p2 ? en.value(s3, p2.c, p2.r) : null;
+      out.kpi2 = { value: v2, text: fmtValue(v2), label: ch.label2 || '' };
+    }
+    return out;
   }
   let header = [], body = [];
   if (ch.table) {
@@ -694,7 +783,7 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
 // ------------------------------------------------------------------ live (combined) layout — workbook level
 // st.live = { order:[key], spans:{key:{span,h}}, hidden:[key], flow:'vertical'|'horizontal', reveal:bool,
 //             slots:[{id, span, h, image?}], panels:[{id, title, text, value, label, image, span, h, by}] }
-const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels', 'slides', 'links'];
+const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels', 'slides', 'links', 'fx'];
 function setLive(st, patch) {
   const old = {};
   const L = { ...(st.live || {}) };
@@ -854,6 +943,11 @@ function opSetTables(st, op) {
     const sh = st.sheets.find((s) => sameName(s.name, name));
     if (!sh) continue;
     if (list) sh.merges = [...list]; else delete sh.merges;
+  }
+  for (const [name, list] of Object.entries(op.conds || {})) {
+    const sh = st.sheets.find((s) => sameName(s.name, name));
+    if (!sh) continue;
+    if (list) sh.conds = clone(list); else delete sh.conds;
   }
   return { inverse: [inv], changes: [] };
 }
@@ -1058,6 +1152,7 @@ export function describe(st) {
     return {
       name: s.name, used: u ? rangeToString(u) : null, cells: n, formulas: f, freeze: s.freeze,
       merges: s.merges || [],
+      conds: (s.conds || []).map((c) => ({ id: c.id, range: c.range, rules: c.rules.map(describeRule) })),
       charts: (s.charts || []).map((c) => ({ id: c.id, type: c.type, title: c.title, source: c.table ? '@' + c.table : c.range || c.value, at: c.at })),
       tables: (s.tables || []).map((t) => { const R = parseRange(t.range); return { name: t.name, range: t.range, rows: R.r2 - R.r1, columns: tableColumns(s, R) }; }),
     };
