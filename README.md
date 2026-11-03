@@ -11,7 +11,8 @@ Zero dependencies. Node 22.13+ and a browser. Works headless.
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 20 tests, incl. a 2000-round undo/redo fuzz over every structural op
+npm test           # 31 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
+npm run e2e        # 18 browser tests (Playwright): two users, Live, slides, adaptive ink, flip, phone, XSS
 ```
 
 ![The grid](docs/grid.jpg)
@@ -170,6 +171,9 @@ the layout the user is looking at.
 
 - **Adaptive ink.** Live samples the background behind every card (shader or image) and switches that card to dark
   text and lighter glass when the background is bright. Charts repaint in a dark palette. Nothing to configure.
+- **Slow machines**: Live measures its own frame rate. Without a GPU (VMs, remote desktops, TV sticks) it lowers the
+  shader resolution step by step, then freezes the background to a still frame, and skips view transitions — so
+  input never stalls. `cm live` reports the background quality.
 - **Flip a card** (⟲) to see the sheet behind it: A1 addresses, raw formulas next to their values, and the card's
   recent change history (who changed what). Flip back to return.
 - **Relations** (⛓, combined layout): Spread finds columns in different tables that share values, and which table feeds

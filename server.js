@@ -202,7 +202,7 @@ export function createServer(store) {
       const L = store.live;
       if (u.searchParams.get('format') === 'json') return send(res, 200, L || { open: false });
       if (!L || !L.open) return send(res, 200, 'Live mode is not open on the user\'s screen');
-      const lines = [`Live open · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
+      const lines = [`Live open · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''}${L.slide ? ' · SLIDE ' + L.slide : ''}${L.quality && L.quality !== 'full' ? ' · background quality ' + L.quality + ' (slow device)' : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
       for (const c of L.cards || []) lines.push(`  ${c.visible ? '●' : '○'} ${c.key}  ${c.kind}${c.title ? ` "${c.title}"` : ''}  @${c.x},${c.y} ${c.w}×${c.h}${c.summary ? '  ' + c.summary : ''}`);
       lines.push('(● = on screen now; positions in CSS px of the live canvas)');
       send(res, 200, lines.join('\n'));

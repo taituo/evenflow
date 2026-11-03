@@ -393,9 +393,10 @@ export function mount(root, ctx) {
       const tw = g.measureText(p.name).width + 8;
       g.fillStyle = p.color || '#888';
       const ty = A.r1 === 0 ? r.y + r.h : r.y - 14;   // first row: tag below the cell
-      g.fillRect(r.x + r.w - tw, ty, tw, 14);
+      const tx = Math.max(r.x, r.x + r.w - tw);         // narrow cell: tag starts at the cell, not off its left edge
+      g.fillRect(tx, ty, tw, 14);
       g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle';
-      g.fillText(p.name, r.x + r.w - tw + 4, ty + 7);
+      g.fillText(p.name, tx + 4, ty + 7);
       g.textBaseline = 'alphabetic';
     }
     if (agentBox && now - agentBox.t0 < 10000 && sameName(agentBox.sheet, s.name)) {
@@ -1070,7 +1071,7 @@ export function mount(root, ctx) {
       b.className = 'sv-tab' + (sameName(s.name, sheetName) ? ' on' : '');
       b.textContent = s.name;
       if (agentSheets.has(s.name.toLowerCase())) b.insertAdjacentHTML('beforeend', '<span class="dot" title="agent changed this sheet"></span>');
-      for (const p of others.filter((x) => x.sheet && sameName(x.sheet, s.name)).slice(0, 4)) b.insertAdjacentHTML('beforeend', `<span class="pdot" style="background:${p.color}" title="${String(p.name).replace(/"/g, '')} is here"></span>`);
+      for (const p of others.filter((x) => x.sheet && sameName(x.sheet, s.name)).slice(0, 4)) b.insertAdjacentHTML('beforeend', `<span class="pdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(p.color) ? p.color : '#888'}" title="${String(p.name).replace(/[<>"&]/g, '')} is here"></span>`);
       b.onmousedown = (e) => { if (!b.isContentEditable) e.preventDefault(); };
       b.onclick = () => { if (!b.isContentEditable) switchSheet(s.name, isFormulaEdit()); };
       b.ondblclick = () => renameTab(b, s);
@@ -1775,7 +1776,7 @@ export function mount(root, ctx) {
       p.innerHTML = `<div class="hp-h">🕘 ${esc(title)} <span>${list.length} change${list.length === 1 ? '' : 's'}</span></div>` + (list.length ? list.slice(0, 40).map((x) => {
         const who = x.who || x.by;
         const when = new Date(x.ts).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const what = x.moved ? `moved ${esc(x.moved)}` : x.table ? `table ${esc(x.table)}` : `${x.at && !title.endsWith(x.at.split('!')[1]) ? `<code>${esc(x.at)}</code> ` : ''}${esc(x.old ?? '∅') || '∅'} → <b>${esc(x.new ?? '∅') || '∅'}</b>${x.t && q.startsWith('table') ? ` <em>${esc(x.t)}</em>` : ''}`;
+        const what = x.moved ? `${x.away ? 'cut away' : 'moved'} ${esc(x.moved)}` : x.table ? `table ${esc(x.table)}` : `${x.at && !title.endsWith(x.at.split('!')[1]) ? `<code>${esc(x.at)}</code> ` : ''}${esc(x.old ?? '∅') || '∅'} → <b>${esc(x.new ?? '∅') || '∅'}</b>${x.t && q.startsWith('table') ? ` <em>${esc(x.t)}</em>` : ''}`;
         return `<div class="hp-r"><span class="hp-v">v${x.v}</span><span class="hp-w ${x.by === 'user' ? '' : 'agent'}">${esc(who)}</span><span class="hp-t">${when}</span><div class="hp-x">${what}</div></div>`;
       }).join('') : '<div class="hp-empty">No recorded changes (the log keeps recent history).</div>');
     });

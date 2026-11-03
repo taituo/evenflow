@@ -83,12 +83,34 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   let mount = null, mountedShader = null;
   let slide = null;           // the slide being shown (null = free browsing)
   const themeName = () => (PRESETS[slide?.bg?.theme] ? slide.bg.theme : PRESETS[sh().view?.theme] ? sh().view.theme : 'aurora');
+  // Adaptive quality: without a GPU (VMs, remote desktops, cheap TV sticks) a full-resolution animated shader can
+  // starve the page of frames, and then input and transitions stall too. Measure, and step down: fewer pixels
+  // (gradients upscale invisibly), and as a last resort a still frame.
+  const QUALITY = [1920 * 1080 * 2, 1920 * 1080 / 2, 960 * 540 / 2, 480 * 270];
+  const gov = { level: 0, frozen: false, slow: 0, n: 0, t0: performance.now(), raf: 0 };
+  const govTick = (now) => {
+    gov.n++;
+    if (now - gov.t0 >= 1500) {
+      const fps = (gov.n * 1000) / (now - gov.t0);
+      gov.slow = fps < 24 && !document.hidden ? gov.slow + 1 : 0;
+      if (gov.slow >= 2 && mount) {
+        gov.slow = 0;
+        if (gov.level < QUALITY.length - 1) { gov.level++; try { mount.setMaxPixelCount(QUALITY[gov.level]); } catch {} }
+        else if (!gov.frozen) { gov.frozen = true; try { mount.setSpeed(0); } catch {} root.classList.add('lv-static'); }
+        reportState();
+      }
+      gov.n = 0; gov.t0 = now;
+    }
+    gov.raf = requestAnimationFrame(govTick);
+  };
+  gov.raf = requestAnimationFrame(govTick);
   function mountShader(id, frag, uni, speed) {
-    if (mount && mountedShader === id) { mount.setUniforms(uni); mount.setSpeed(speed); return; }
+    const sp = gov.frozen ? 0 : speed;
+    if (mount && mountedShader === id) { mount.setUniforms(uni); mount.setSpeed(sp); return; }
     try { mount?.dispose(); } catch { /* remount */ }
     $('.lv-bg').innerHTML = '';
     // preserveDrawingBuffer lets adaptive ink read the background behind each card
-    mount = new PS.ShaderMount($('.lv-bg'), frag, uni, { preserveDrawingBuffer: true, premultipliedAlpha: false }, speed, 0, 1, 1920 * 1080 * 2);
+    mount = new PS.ShaderMount($('.lv-bg'), frag, uni, { preserveDrawingBuffer: true, premultipliedAlpha: false }, sp, 0, 1, QUALITY[gov.level]);
     mountedShader = id;
   }
   function applyTheme() {
@@ -99,6 +121,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (img && filter === 'none') {
       // plain bitmap / animated GIF / animated SVG: the browser animates them natively
       if (im.getAttribute('src') !== img) im.src = img;
+      try { mount?.dispose(); } catch {}
+      mount = null; mountedShader = null; $('.lv-bg').innerHTML = '';   // nothing renders behind a plain image
     } else if (img) {
       const pic = new Image();
       pic.crossOrigin = 'anonymous';
@@ -311,25 +335,50 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     fetch(`/api/history?${q}&format=json`).then((r) => r.json()).then((list) => {
       const el = back.querySelector('.lv-back-hist');
       if (!el || !list.length) return;
-      el.innerHTML = '<div class="lv-back-sub">recent changes</div>' + list.slice(0, 8).map((x) => `<div><span>${new Date(x.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${escH(x.who || x.by)}</span> ${escH(x.at || '')} ${x.moved ? 'moved ' + escH(x.moved) : x.table ? 'table ' + escH(x.table) : `${escH(x.old || '∅')} → <b>${escH(x.new || '∅')}</b>`}</div>`).join('');
+      el.innerHTML = '<div class="lv-back-sub">recent changes</div>' + list.slice(0, 8).map((x) => `<div><span>${new Date(x.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${escH(x.who || x.by)}</span> ${escH(x.at || '')} ${x.moved ? (x.away ? 'cut away ' : 'moved ') + escH(x.moved) : x.table ? 'table ' + escH(x.table) : `${escH(x.old || '∅')} → <b>${escH(x.new || '∅')}</b>`}</div>`).join('');
     }).catch(() => {});
   }
   const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   // ------------------------------------------------------------- adaptive ink: dark text on light backgrounds, per card
   function adaptInk() {
+    // One decision for the whole screen (consistent look), with per-card exceptions only where the background behind
+    // a card is clearly on the other side (a bright patch on a dark image, or the reverse).
     const lum = sampleBackground(root);
+    const whole = lum(root);
+    if (whole == null) return;
+    const bright = root.classList.contains('lv-bright') ? whole > 0.5 : whole > 0.56;   // hysteresis
+    root.classList.toggle('lv-bright', bright);
+    const decide = (el) => {
+      const L = lum(el);
+      if (L == null) return bright;
+      const was = el.classList.contains('lv-ink-dark');
+      if (bright) return !(L < (was ? 0.3 : 0.26));
+      return L > (was ? 0.66 : 0.72);
+    };
     for (const n of nodes.values()) {
-      const L = lum(n.el);
-      if (L == null) continue;
-      const dark = n.el.classList.contains('lv-ink-dark') ? L > 0.5 : L > 0.6;   // hysteresis
+      const dark = decide(n.el);
       if (dark !== n.el.classList.contains('lv-ink-dark')) {
         n.el.classList.toggle('lv-ink-dark', dark);
         if (n.item.kind === 'chart') paintChart(n, n.item);
       }
     }
     const t = $('.lv-slidetext');
-    if (t.childElementCount) { const L = lum(t); if (L != null) t.classList.toggle('lv-ink-dark', L > 0.6); }
+    if (t.childElementCount) {
+      // judge the text by where its glyphs are, not by the full-width block
+      const box = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
+      const tw = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
+      const rg = document.createRange();
+      for (let nd = tw.nextNode(); nd; nd = tw.nextNode()) {
+        if (!nd.nodeValue.trim()) continue;
+        rg.selectNodeContents(nd);
+        const q = rg.getBoundingClientRect();
+        box.l = Math.min(box.l, q.left); box.t = Math.min(box.t, q.top); box.r = Math.max(box.r, q.right); box.b = Math.max(box.b, q.bottom);
+      }
+      const glyphs = { getBoundingClientRect: () => ({ left: box.l, top: box.t, right: box.r, bottom: box.b }) };
+      const L = box.r > box.l ? lum(glyphs) : null, was = t.classList.contains('lv-ink-dark');
+      t.classList.toggle('lv-ink-dark', L == null ? bright : bright ? !(L < (was ? 0.3 : 0.26)) : L > (was ? 0.66 : 0.72));
+    }
   }
   const inkTimer = setInterval(() => { if (!document.hidden) adaptInk(); }, 1500);
 
@@ -406,7 +455,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     p.innerHTML = `<div class="lv-sl-head"><b>Slides</b><span>${list.length}</span>
         <button class="lv-btn" data-s="add" title="Add the current view as a slide">＋ This view</button>
         <button class="lv-btn" data-s="text" title="A slide with just a title and text">＋ Text</button>
-        <button class="lv-btn on" data-s="play">▶ Play</button></div>
+        <button class="lv-btn on" data-s="play">▶ Play</button><button class="lv-btn" data-s="close" title="Close">✕</button></div>
       <div class="lv-sl-list">${list.map((x, i) => `
         <div class="lv-sl ${i === slideIdx ? 'on' : ''}" data-id="${escH(x.id)}" data-i="${i}">
           <div class="lv-sl-n">${i + 1}</div>
@@ -431,6 +480,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       case 'add': submit([captureView()]); break;
       case 'text': { const o = captureView(); submit([{ ...o, title: 'Title', text: 'Write something **bold**\n- and a bullet', cards: [], mode: 'auto', focus: null }]); break; }
       case 'play': play(0); root.classList.remove('lv-slides-open'); break;
+      case 'close': root.classList.remove('lv-slides-open'); return;
       case 'go': showSlide(i); break;
       case 'up': if (i > 0) submit([{ op: 'slide', id, index: i - 1 }]); break;
       case 'down': submit([{ op: 'slide', id, index: i + 1 }]); break;
@@ -523,7 +573,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         };
       });
       const body = closing ? { open: false } : {
-        open: true, mode, sheet: sh().name, focus: focusKey, flow: doc.live?.flow || 'vertical',
+        open: true, mode, sheet: sh().name, focus: focusKey, flow: doc.live?.flow || 'vertical', quality: gov.frozen ? 'still' : ['full', 'half', 'low', 'minimal'][gov.level], slide: playing ? slideIdx + 1 : null,
         vw: Math.round(v.width), vh: Math.round(v.height), scroll: [scroller.scrollLeft, scroller.scrollTop], cards,
       };
       ctx.livePresence?.(closing ? null : { mode, sheet: sh().name, focus: focusKey, slide: playing ? slideIdx + 1 : null });
@@ -740,10 +790,16 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     }
   }
   /** Switch layouts with a View Transition so cards morph to their new places. */
+  // While a view transition runs, the browser routes all input to its overlay. On a starved device one can hang
+  // around after its animations end, swallowing clicks — so slow devices skip transitions, and none may outlive 1.5 s.
+  let vtNow = null;
   function transition(fn) {
-    if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches && gov.level < 2 && !gov.frozen) {
       const vt = document.startViewTransition(fn);
+      vtNow = vt;
       for (const pr of [vt.ready, vt.finished, vt.updateCallbackDone]) pr?.catch(() => {});   // overlapping transitions just skip
+      const guard = setTimeout(() => { try { vt.skipTransition(); } catch {} }, 1500);
+      vt.finished.finally(() => { clearTimeout(guard); if (vtNow === vt) vtNow = null; }).catch(() => {});
     } else fn();
   }
 
@@ -1037,7 +1093,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         const d = document.createElement('button');
         d.className = 'lv-dot'; d.dataset.t = k; d.title = k;
         d.style.background = swatch(p);
-        d.onclick = () => { submit([{ op: 'view', sheet: sh().name, theme: k }]); applyTheme(); };
+        d.onclick = () => {
+          if (!th.classList.contains('open')) { th.classList.add('open'); return; }   // collapsed: the current swatch opens the row
+          th.classList.remove('open');
+          if (k !== themeName()) { submit([{ op: 'view', sheet: sh().name, theme: k }]); applyTheme(); }
+        };
         th.append(d);
       }
       applyTheme();
@@ -1084,8 +1144,19 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   root.querySelector('[data-a=exit]').onclick = close;
   root.querySelector('[data-a=fs]').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen?.());
   let idle;
-  const wake = () => { root.classList.remove('lv-idle'); clearTimeout(idle); idle = setTimeout(() => root.classList.add('lv-idle'), 2600); };
-  root.addEventListener('mousemove', wake);
+  // the bar fades out when the pointer rests — but never while it is being used
+  // (pointer position is tracked by hand: :hover isn't recomputed when the bar regains pointer-events)
+  let lastPt = null;
+  const overBar = () => { if (!lastPt) return false; const r = bar.getBoundingClientRect(); return lastPt.x >= r.left - 8 && lastPt.x <= r.right + 8 && lastPt.y >= r.top - 8 && lastPt.y <= r.bottom + 8; };
+  const sleepBar = () => {
+    if ((lastPt?.mouse && overBar()) || bar.matches(':focus-within') || root.classList.contains('lv-slides-open')) { idle = setTimeout(sleepBar, 1200); return; }
+    root.classList.add('lv-idle');
+  };
+  const wake = (e) => {
+    if (e?.clientX != null) lastPt = { x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse' };
+    root.classList.remove('lv-idle'); clearTimeout(idle); idle = setTimeout(sleepBar, 2600);
+  };
+  for (const ev of ['pointermove', 'pointerdown', 'wheel']) root.addEventListener(ev, wake, { passive: true });
   wake();
   const onKey = (e) => {
     const ae = document.activeElement;
@@ -1106,6 +1177,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
 
   function close() {
     cancelAnimationFrame(raf);
+    cancelAnimationFrame(gov.raf);
+    clearTimeout(idle);
     document.removeEventListener('keydown', onKey, true);
     removeEventListener('resize', onResize);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});

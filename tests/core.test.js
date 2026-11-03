@@ -138,6 +138,9 @@ test('fuzz: every op followed by its inverse restores the workbook exactly', () 
     try { S.apply(st, { op: 'borders', range: rng(), type: 'all' }); } catch {}
     S.apply(st, { op: 'addChart', type: 'line', range: rng(), at: cell() });
     S.apply(st, { op: 'addChart', type: 'kpi', value: 'Two!' + cell(), at: cell() });
+    S.apply(st, { op: 'slide', id: 's1', title: 'One', cards: ['chart1'], bg: { image: '/a.gif', filter: 'dither' } });
+    S.apply(st, { op: 'slide', id: 's2', title: 'Two', text: 'x' });
+    S.apply(st, { op: 'panel', id: 'p1', title: 'P', text: 't' });
     const before = canon(st);
     const ops = [
       () => ({ op: 'move', from: rng(), to: (rnd(4) ? '' : 'Two!') + cell() }),
@@ -156,6 +159,12 @@ test('fuzz: every op followed by its inverse restores the workbook exactly', () 
       () => ({ op: 'updateChart', id: 'chart1', type: 'bar', at: cell(), range: rng() }),
       () => ({ op: 'deleteChart', id: 'chart2' }),
       () => ({ op: 'borders', range: rng(), type: ['all', 'outer', 'inner', 'clear', 'left'][rnd(5)], style: 'dashed' }),
+      () => ({ op: 'slide', id: ['s1', 's2', 's3'][rnd(3)], index: rnd(3), title: 'T' + rnd(9), bg: rnd(2) ? null : { theme: 'ocean' }, duration: rnd(10) }),
+      () => ({ op: 'removeSlide', id: ['s1', 's2'][rnd(2)] }),
+      () => ({ op: 'panel', id: ['p1', 'p2'][rnd(2)], text: 'v' + rnd(9), span: 1 + rnd(2) }),
+      () => ({ op: 'removePanel', id: 'p1' }),
+      () => ({ op: 'liveLayout', order: ['a', 'b'], links: rnd(2) ? false : null, flow: rnd(2) ? 'horizontal' : null }),
+      () => ({ op: 'view', grid: !!rnd(2), theme: 'ember', font: 'serif' }),
     ];
     const op = ops[rnd(ops.length)]();
     let res;

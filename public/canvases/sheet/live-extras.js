@@ -22,7 +22,7 @@ export function sampleBackground(bgHost) {
     } else pg.drawImage(src, 0, 0, probe.width, probe.height);
     const data = pg.getImageData(0, 0, probe.width, probe.height).data;
     return (el) => {
-      const r = el.getBoundingClientRect();
+      const r = el.getBoundingClientRect();   // an element or a Range (text extent)
       const x1 = Math.max(0, Math.floor((r.left / vw) * probe.width)), x2 = Math.min(probe.width - 1, Math.ceil((r.right / vw) * probe.width));
       const y1 = Math.max(0, Math.floor((r.top / vh) * probe.height)), y2 = Math.min(probe.height - 1, Math.ceil((r.bottom / vh) * probe.height));
       if (x2 < x1 || y2 < y1) return null;
@@ -96,11 +96,13 @@ export function drawRelations(stage, rel, nodes) {
       c1 = [p1[0], p1[1] + d]; c2 = [p2[0], p2[1] - d];
     }
     const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+    // label only where it is readable: in the gap between cards, not on top of one
+    const covered = [...nodes.values()].some((n) => { const q = box(n.el); return n.el.offsetParent !== null && mid[0] > q.x - 2 && mid[0] < q.x + q.w + 2 && mid[1] - 8 > q.y - 4 && mid[1] - 8 < q.y + q.h + 4; });
     const path = `M${p1} C${c1} ${c2} ${p2}`;
     const cls = r.lineage ? 'lv-link-line lineage' : 'lv-link-line';
     parts.push(`<g class="${cls}" data-a="${esc(r.a)}" data-b="${esc(r.b)}"><path class="glow" d="${path}"/><path class="line" d="${path}"/>`
       + `<circle cx="${p1[0]}" cy="${p1[1]}" r="3.5"/><circle cx="${p2[0]}" cy="${p2[1]}" r="3.5"/>`
-      + `<text x="${mid[0]}" y="${mid[1] - 8}">${esc(r.label)}${r.n > 1 ? ` · ${r.n}` : ''}</text></g>`);
+      + (covered ? '' : `<text x="${mid[0]}" y="${mid[1] - 8}">${esc(r.label)}${r.n > 1 ? ` · ${r.n}` : ''}</text>`) + `<title>${esc(r.label)}</title></g>`);
   }
   svg.innerHTML = parts.join('');
 }
