@@ -1,5 +1,6 @@
 // Shell: doc tabs, live sync (SSE), history drawer, milestones. Canvas views live in /canvases/<type>/view.js
 import { applyDocOp, replaceInPlace } from './shared/types/index.js';
+import { setPacks } from './canvases/sheet/viz-dom.js';
 
 const $ = (s) => document.querySelector(s);
 const clientId = Math.random().toString(36).slice(2, 10);
@@ -256,6 +257,7 @@ function connect() {
       return;
     }
     if (e.type === 'commit') { S.commits.push(e.commit); if (!$('#drawer').hidden && drawerMode === 'history') renderDrawer(); toast(`Milestone ${e.commit.id}: ${e.commit.message}`); return; }
+    if (e.type === 'viz') { loadPacks(); if (e.by !== 'user') toast(`Visual pack “${e.id}” ${e.action === 'delete' ? 'removed' : e.action === 'add' ? 'installed' : 'updated'} by ${e.by}`); return; }
     if (e.type === 'presence') {
       S.people = e.people || [];
       renderPeople();
@@ -442,8 +444,12 @@ async function showDiff(c) {
   } catch (e) { toast(e.message, true); }
 }
 
+// ------------------------------------------------------------------ SVG visual packs
+async function loadPacks() { try { setPacks(await get('/api/viz')); } catch { /* visuals show "no pack" */ } }
+
 // ------------------------------------------------------------------ boot
 (async () => {
+  await loadPacks();
   await refreshWorkspace();
   const want = location.hash.slice(1);
   await openDoc(S.docs.find((d) => d.id === want) ? want : S.docs[0].id);

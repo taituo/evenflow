@@ -11,6 +11,8 @@ import { addr, parseAddr, parseRange, splitSheet, sameName } from '../../shared/
 import { isErr } from '../../shared/formula.js';
 import { condStyle } from '../../shared/cond.js';
 import { FX, fxText, textOf, vaporRowsOut, vaporRowsIn } from './fx.js';
+import { renderViz, getPack } from './viz-dom.js';
+import { isViz } from '../../shared/engine.js';
 
 // Background themes. Each one is a Paper Shaders fragment shader + its parameters.
 export const PRESETS = {
@@ -182,7 +184,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         const vsh = vs ? doc.sheets.find((x) => sameName(x.name, vs)) : s, vp = parseAddr(va);
         if (vsh && vp) light = condStyle(en, vsh, vp.c, vp.r, en.value(vsh, vp.c, vp.r))?.dot;
       }
-      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : 'chart', ch, data, r, light });
+      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : ch.type === 'viz' ? 'viz' : 'chart', ch, data, r, light });
     }
     for (const x of tabs) {
       const r = G.rect(x.R);
@@ -194,7 +196,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         for (let c = x.R.c1; c <= x.R.c2; c++) {
           const A = addr(c, rr), cell = s.cells[A];
           const v = en.value(s, c, rr);
-          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, rr, v)?.dot });
+          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, rr, v)?.dot, viz: isViz(v) ? { pack: v.pack, value: v.value, label: v.label } : null });
         }
         rows.push(row);
       }
@@ -223,7 +225,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   let mode = 'sheet';
   try { mode = localStorage.getItem('spread.liveMode') === 'auto' ? 'auto' : 'sheet'; } catch {}
   const excluded = new Set();
-  const ORDER = { panel: -1, kpi: 0, stat: 1, chart: 2, table: 3, img: 4, slot: 5 };
+  const ORDER = { panel: -1, kpi: 0, viz: 0.5, stat: 1, chart: 2, table: 3, img: 4, slot: 5 };
   function autoItems() {
     const out = [];
     for (const s of doc.sheets) {
@@ -241,7 +243,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
             const row = [];
             for (let c = U.c1; c <= U.c2; c++) {
               const A = addr(c, r), cell = s.cells[A], v = en.value(s, c, r);
-              row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, r, v)?.dot });
+              row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, r, v)?.dot, viz: isViz(v) ? { pack: v.pack, value: v.value, label: v.label } : null });
             }
             rows.push(row);
           }
@@ -299,10 +301,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const n = o?.span || (it.kind === 'table' ? (it.cols.length >= 6 ? 3 : it.cols.length >= 4 ? 2 : 1)
       : it.kind === 'chart' ? (it.ch.type !== 'pie' && it.ch.w >= 520 ? 2 : 1)
         : it.kind === 'panel' || it.kind === 'slot' ? (it.p || it.sl).span || 1 : 1);
-    const min = ['kpi', 'stat', 'slot', 'img', 'panel'].includes(it.kind) ? 0.5 : 1;
+    const min = ['kpi', 'viz', 'stat', 'slot', 'img', 'panel'].includes(it.kind) ? 0.5 : 1;
     return Math.max(min, Math.min(n, cols));
   }
-  const FIXED_H = { kpi: 150, stat: 118, chart: 300, img: 260, slot: 180 };
+  const FIXED_H = { kpi: 150, viz: 230, stat: 118, chart: 300, img: 260, slot: 180 };
   const heightOf = (it) => doc.live?.spans?.[it.key]?.h || (it.kind === 'panel' ? it.p.h : it.kind === 'slot' ? it.sl.h : 0) || FIXED_H[it.kind] || 0;
 
   // ------------------------------------------------------------- rendering (keyed)
@@ -347,7 +349,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (!withHistory) return;
     const it = n.item;
     const q = it.kind === 'table' && !it.key.endsWith('::range') ? `table=${encodeURIComponent(it.name)}`
-      : it.kind === 'kpi' ? `cell=${encodeURIComponent(it.ch.value.includes('!') ? it.ch.value : it.sheet + '!' + it.ch.value)}`
+      : it.kind === 'kpi' || it.kind === 'viz' ? `cell=${encodeURIComponent(it.ch.value.includes('!') ? it.ch.value : it.sheet + '!' + it.ch.value)}`
         : it.kind === 'stat' ? `cell=${encodeURIComponent(it.sheet + '!' + it.value.A)}` : null;
     if (!q) return;
     fetch(`/api/history?${q}&format=json`).then((r) => r.json()).then((list) => {
@@ -611,14 +613,14 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const v = scroller.getBoundingClientRect();
       const cards = [...nodes.values()].map((n) => {
         const r = n.el.getBoundingClientRect(), it = n.item;
-        const summary = it.kind === 'kpi' ? `= ${it.data.kpi.text}`
+        const summary = it.kind === 'viz' ? `${it.ch.pack}: ${it.data.viz.text}` : it.kind === 'kpi' ? `= ${it.data.kpi.text}`
           : it.kind === 'stat' ? `${it.label} = ${it.value.text}`
             : it.kind === 'chart' ? `${it.ch.type}: ${it.data.labels.slice(0, 6).map((l, i) => `${l} ${it.data.series.map((s2) => s2.values[i] ?? '∅').join('/')}`).join(', ')}`
               : it.kind === 'table' ? `${it.rows.length} rows [${it.cols.join(' | ')}]`
                 : it.kind === 'panel' ? (it.p.text || '').slice(0, 80).replace(/\n/g, ' ')
                   : it.kind === 'slot' ? (it.sl.image ? 'image ' + it.sl.image : 'empty space')
                     : it.kind === 'text' ? it.text.slice(0, 60) : '';
-        const title = it.kind === 'chart' || it.kind === 'kpi' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
+        const title = it.kind === 'chart' || it.kind === 'kpi' || it.kind === 'viz' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
         return {
           key: it.key, kind: it.kind, title, summary,
           x: Math.round(r.left - v.left + scroller.scrollLeft), y: Math.round(r.top - v.top + scroller.scrollTop), w: Math.round(r.width), h: Math.round(r.height),
@@ -724,7 +726,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const units = hflow ? 6 : Math.max(1, getComputedStyle(stage).gridTemplateColumns.split(' ').length);
       const gap = parseFloat(getComputedStyle(stage).columnGap) || 18;
       const uw = hflow ? 161 : parseFloat(getComputedStyle(stage).gridTemplateColumns) || 160;
-      const min = ['kpi', 'stat', 'slot', 'img', 'panel'].includes(d.n.item.kind) ? 1 : 2;
+      const min = ['kpi', 'viz', 'stat', 'slot', 'img', 'panel'].includes(d.n.item.kind) ? 1 : 2;
       const span = Math.max(min, Math.min(units, Math.round((d.w + gap) / (uw + gap)))) / 2;
       const spans = { ...(doc.live?.spans || {}), [key]: { span, ...(d.n.item.kind !== 'table' ? { h: Math.round(d.h) } : {}) } };
       transition(() => { submit([{ op: 'liveLayout', spans }]); });
@@ -917,6 +919,9 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (it.kind === 'chart') {
       el.className = 'lv-card lv-chart';
       el.innerHTML = '<div class="lv-title"></div><canvas></canvas>';
+    } else if (it.kind === 'viz') {
+      el.className = 'lv-card lv-vizcard';
+      el.innerHTML = '<div class="lv-label"></div><div class="lv-vizhost"></div><div class="lv-vizcap"></div>';
     } else if (it.kind === 'kpi') {
       el.className = 'lv-card lv-kpi';
       el.innerHTML = '<div class="lv-label"></div><div class="lv-kpis"><div class="lv-num"></div><div class="lv-kv2"><div class="lv-sub2"></div><div class="lv-num2"></div></div></div>';
@@ -982,6 +987,17 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       else if (!sameShape(prev, it.data)) n.tween = null;
       n.data = it.data;
       if (mode === 'sheet') paintChart(n, it);
+    } else if (it.kind === 'viz') {
+      const d = it.data.viz;
+      el.querySelector('.lv-label').textContent = it.ch.title || '';
+      const host = el.querySelector('.lv-vizhost');
+      const before = host.dataset.state;
+      renderViz(host, d.pack, d.value, d.label);
+      const pack = getPack(d.pack);
+      const cap = pack?.kind === 'states' ? (pack.states.find((x) => x.id === host.dataset.state)?.label || '') : '';
+      el.querySelector('.lv-vizcap').textContent = cap;
+      if (n.item && before && before !== host.dataset.state) pulse(el);
+      setLight(el, it.light);
     } else if (it.kind === 'kpi') {
       el.querySelector('.lv-label').textContent = it.ch.title || it.data.kpi.label || '';
       const v = it.data.kpi.value;
@@ -1013,7 +1029,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const thead = el.querySelector('thead'), tbody = el.querySelector('tbody');
       const fsz = mode === 'auto' ? 14 : Math.max(11, Math.min(17, 12 * scale));
       el.style.fontSize = fsz + 'px';
-      const sig = it.cols.join('\u0001') + '|' + it.rows.length;
+      // the cells' addresses are part of the shape: a table that moved (or had a column inserted before it) rebuilds
+      const sig = it.cols.join('\u0001') + '|' + it.rows.length + '|' + (it.rows[0]?.[0]?.A || '') + ':' + (it.rows.at(-1)?.at(-1)?.A || '');
       const rowKey = (row, i) => (row[0]?.text || '') + '\u0001' + (row[0]?.text ? '' : i);
       if (n.sig !== sig && !el.contains(document.activeElement)) {
         const had = n.sig != null;
@@ -1036,6 +1053,17 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       for (const row of it.rows) for (const c of row) {
         const td = tbody.querySelector(`td[data-a="${c.A}"]`);
         if (!td || td === document.activeElement) continue;
+        if (c.viz) {
+          // a =VIZ() cell: the pack's picture, updating in place (values glide, states cross-fade)
+          let host = td.querySelector(':scope > .lv-vizcell');
+          if (!host) { td.textContent = ''; host = document.createElement('span'); host.className = 'lv-vizcell'; td.append(host); }
+          renderViz(host, c.viz.pack, c.viz.value, c.viz.label);
+          td.title = `${c.viz.pack}: ${c.text}`;
+          td.contentEditable = 'false';
+          td.dataset.init = 1;
+          continue;
+        }
+        if (td.querySelector(':scope > .lv-vizcell')) td.textContent = '';
         if (textOf(td) !== c.text) { if (td.dataset.init) fxText(td, c.text, fxKind()); else td.textContent = c.text; }
         td.dataset.init = 1;
         td.dataset.raw = c.raw;

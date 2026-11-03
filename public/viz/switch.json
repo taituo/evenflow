@@ -1,0 +1,8 @@
+{
+  "spec": "spread-viz/1",
+  "id": "switch",
+  "kind": "toggle",
+  "name": "Switch",
+  "description": "An on/off switch; the knob slides.",
+  "svg": "<svg viewBox=\"0 0 120 64\" xmlns=\"http://www.w3.org/2000/svg\">\n<style>\n.track{fill:#4a4f6e}.knob{fill:#fff;transform:translateX(0px)}\n[data-state=\"on\"] .track{fill:#34c759}[data-state=\"on\"] .knob{transform:translateX(56px)}\n.t{font:600 13px system-ui,sans-serif;fill:#fff;opacity:.85}\n</style>\n<rect class=\"track\" x=\"2\" y=\"2\" width=\"116\" height=\"60\" rx=\"30\"/>\n<circle class=\"knob\" cx=\"32\" cy=\"32\" r=\"25\"/>\n</svg>"
+}

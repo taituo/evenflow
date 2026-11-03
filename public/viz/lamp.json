@@ -1,0 +1,8 @@
+{
+  "spec": "spread-viz/1",
+  "id": "lamp",
+  "kind": "toggle",
+  "name": "Lamp",
+  "description": "A bulb that lights up when the value is on (1, true, on, yes, ok, done…).",
+  "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">\n<style>\n.glow{opacity:0}.bulb{fill:#3b4060}.ray{opacity:0;stroke:#ffd54a;stroke-width:4;stroke-linecap:round}\n[data-state=\"on\"] .glow{opacity:1}[data-state=\"on\"] .bulb{fill:#ffd54a}[data-state=\"on\"] .ray{opacity:.9}\n</style>\n<defs><radialGradient id=\"g\"><stop offset=\"0\" stop-color=\"#ffe680\" stop-opacity=\".95\"/><stop offset=\"1\" stop-color=\"#ffe680\" stop-opacity=\"0\"/></radialGradient></defs>\n<circle class=\"glow\" cx=\"50\" cy=\"40\" r=\"48\" fill=\"url(#g)\"/>\n<g class=\"ray\"><line x1=\"50\" y1=\"2\" x2=\"50\" y2=\"8\"/><line x1=\"16\" y1=\"16\" x2=\"21\" y2=\"21\"/><line x1=\"84\" y1=\"16\" x2=\"79\" y2=\"21\"/><line x1=\"4\" y1=\"40\" x2=\"11\" y2=\"40\"/><line x1=\"96\" y1=\"40\" x2=\"89\" y2=\"40\"/></g>\n<path class=\"bulb\" d=\"M50 14a25 25 0 0 0-14.5 45.4c3.6 2.7 5.5 6.4 5.5 10.6v4h18v-4c0-4.2 1.9-7.9 5.5-10.6A25 25 0 0 0 50 14z\"/>\n<rect x=\"40\" y=\"77\" width=\"20\" height=\"5\" rx=\"2.5\" fill=\"#9aa0bb\"/><rect x=\"42\" y=\"84\" width=\"16\" height=\"5\" rx=\"2.5\" fill=\"#9aa0bb\"/><rect x=\"46\" y=\"91\" width=\"8\" height=\"3\" rx=\"1.5\" fill=\"#9aa0bb\"/>\n</svg>"
+}

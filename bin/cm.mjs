@@ -70,6 +70,8 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm export Dashboard [md|html]    sheet as a document (headings, tables, charts, KPIs)
   cm present Dashboard [chart:status|Tasks|C12] [--combined]   put the user's screen into Live / Focus mode
   cm present off
+  cm viz ls | spec | check pack.json | add pack.json | rm ID       SVG visual packs (spread-viz/1, see cm viz spec)
+  cm viz card battery Project!C12 --at K2   a visual card · in a cell: =VIZ("status", B7)
   cm screens                       open Live views (TV, laptop…) — target one with --screen id
   cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
   cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
@@ -214,6 +216,40 @@ switch (cmd) {
       if (args[1] !== 'rm') slots.push({ id: args[0], span: span ? +span : 1, h: h ? +h : 180, ...(image ? { image } : {}) });
       await ops([{ op: 'liveLayout', slots }]);
     }
+    break;
+  }
+  case 'viz': {
+    // SVG visual packs (spread-viz/1)
+    const sub = args[0];
+    if (sub === 'ls' || !sub) { out(await call('GET', '/api/viz?format=text')); break; }
+    if (sub === 'spec') { out(await call('GET', '/api/viz/spec')); break; }
+    if (sub === 'show') { out(await call('GET', '/api/viz?' + qs({ id: args[1] }))); break; }
+    if (sub === 'rm') { await call('DELETE', '/api/viz?' + qs({ id: args[1], by: BY })); out('ok'); break; }
+    if (sub === 'add' || sub === 'check') {
+      const pack = JSON.parse(args[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(args[1], 'utf8'));
+      const r = await fetch(BASE + '/api/viz' + (sub === 'check' ? '?dry=1' : ''), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pack, by: BY }) });
+      const j = await r.json();
+      const lines = [r.ok ? (sub === 'check' ? `valid: ${pack.id}` : `${j.replaced ? 'updated' : 'installed'} ${j.id} (rev ${j.rev})`) : `INVALID ${pack.id ?? ''}`];
+      for (const e of j.errors || []) lines.push('  error: ' + e);
+      for (const w of j.warnings || []) lines.push('  warning: ' + w);
+      out(lines.join('\n'));
+      if (!r.ok) process.exit(1);
+      break;
+    }
+    if (sub === 'card') {
+      // cm viz card battery Project!C12 --at K2 [--title "…"] [--size small]
+      const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
+      const at = flag('at'), title = flag('title'), sheet = flag('sheet'), size = flag('size');
+      const r = JSON.parse(await call('POST', '/api/ops', { doc: DOC || undefined, by: BY, ops: [{ op: 'addChart', type: 'viz', pack: args[1], value: args[2], at, title, sheet }] }));
+      const ch = r.changes.find((c) => c.k === 'chart');
+      out(`ok v${r.version}  chart ${ch.id} (viz ${args[1]} ← ${args[2]})`);
+      if (size === 'small') {
+        const spans = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc.live?.spans || {};
+        await ops([{ op: 'liveLayout', spans: { ...spans, [`${ch.sheet}::chart:${ch.id}`]: { span: 0.5 } } }]);
+      }
+      break;
+    }
+    out('cm viz ls | spec | show ID | check FILE | add FILE | rm ID | card PACK CELL [--at K2 --title … --size small]   (FILE "-" = stdin)');
     break;
   }
   case 'screens': out(await call('GET', '/api/screens')); break;

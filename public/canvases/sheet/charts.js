@@ -1,5 +1,10 @@
 // Native canvas chart renderer: column, bar, line, area, pie, kpi. No libraries.
 import { isErr } from '../../shared/formula.js';
+import { vizImage, getPack } from './viz-dom.js';
+
+let redraw = () => {};
+/** The grid calls this so SVG visuals can repaint once their image has loaded. */
+export const setRedraw = (fn) => { redraw = fn; };
 
 export const THEMES = {
   light: { series: ['#1a73e8', '#e8710a', '#188038', '#d93025', '#9334e6', '#12b5cb', '#f9ab00', '#e52592', '#5f6368'], ink: '#3c4043', muted: '#80868b', grid: '#e8eaed', axis: '#bdc1c6', bg: '#fff', border: '#dadce0', slice: '#fff', title: true, value: '#202124' },
@@ -48,7 +53,8 @@ export function drawChart(g, r, ch, data, z, selected, theme = 'light') {
   }
   const area = { x: r.x + pad, y: top, w: r.w - 2 * pad, h: r.y + r.h - pad - top };
   try {
-    if (data.kpi) kpi(g, r, ch, data.kpi, z, f, data.kpi2);
+    if (data.viz) viz(g, area, data.viz, f);
+    else if (data.kpi) kpi(g, r, ch, data.kpi, z, f, data.kpi2);
     else if (!data.series.length || !data.labels.length) empty(g, area, f);
     else if (ch.type === 'pie') pie(g, area, data, z, f);
     else axisChart(g, area, ch, data, z, f);
@@ -92,6 +98,14 @@ function kpi(g, r, ch, k, z, f, k2) {
   while (size > 10 && g.measureText(text).width > r.w - 28 * z) { size -= 2; g.font = `600 ${size}px system-ui, sans-serif`; }
   g.fillStyle = isErr(v) ? '#d93025' : T.value; g.textBaseline = 'alphabetic';
   g.fillText(text, r.x + 14 * z, r.y + r.h - 16 * z);
+}
+
+function viz(g, a, d, f) {
+  if (!getPack(d.pack)) { empty(g, a, f, `no pack “${d.pack}”`); return; }
+  const dpr = globalThis.devicePixelRatio || 1;
+  const s = Math.min(a.w, a.h);
+  const img = vizImage(d.pack, d.value, d.label, s * dpr, s * dpr, redraw);
+  if (img) g.drawImage(img, a.x + (a.w - s) / 2, a.y + (a.h - s) / 2, s, s);
 }
 
 function legend(g, a, series, z, f) {

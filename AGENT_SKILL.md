@@ -85,6 +85,20 @@ cm chart-show status | cm chart-set status type=bar w=500 | cm chart-rm status
 cm export Dashboard md                                   # sheet → document (headings, tables, charts, KPIs)
 ```
 
+## SVG visuals (spread-viz/1)
+
+A value can be drawn as a picture: `=VIZ("status", C7)` in a cell, or a card. Built in: lamp, switch (on/off) ·
+gauge, battery, ring (0–100) · traffic, status, weather (named states).
+```
+cm viz ls                                   # installed packs and their states / ranges
+cm viz card gauge Budget!D6 --at K2 --title "Spend" [--size small]
+cm set 'Project!F7==VIZ("traffic",C7)'      # a picture in a cell; the cell still holds the value
+cm viz spec                                 # the format — read it before making a pack
+cm viz check pack.json && cm viz add pack.json   # validate (precise errors), then install
+```
+Making a pack: one JSON object, SVG with a viewBox, no scripts/events/external links; drive it with `var(--v)`,
+`[data-state="…"]`, `[data-level="0..10"]` and `{{value}}`. Use `currentColor` for ink.
+
 ## Live mode — the user's dashboard screen
 
 The user can turn any sheet into **Live**: a full-screen, real-time presentation over a shader background. Your writes
@@ -185,6 +199,7 @@ Errors: `#REF! #DIV/0! #NAME? #VALUE! #N/A #CYCLE! #ERROR!`. Checks/validation =
 | `POST /api/docs {type:"sheet"\|"text", title}` | new workbook / notes |
 | `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history (move-aware) |
 | `GET /api/presence` | who is connected and where |
+| `GET /api/viz` · `GET /api/viz/spec` · `POST /api/viz[?dry=1]` · `DELETE /api/viz?id=` | SVG visual packs |
 | `GET /api/events` | SSE stream of every batch |
 
 Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows {at,count}` · `insertCols|deleteCols {at:"C",count}` ·
@@ -193,7 +208,7 @@ Ops: `set {cells}|{range,values}` · `move {from,to}` · `insertRows|deleteRows 
 `addSheet {name}` · `renameSheet {sheet,name}` · `deleteSheet {sheet}` ·
 tables: `table {name,range}` · `deleteTable` · `renameTable {name,newName}` · `appendRows {table,rows}` ·
 `updateRows {table, key|match|rows, set}` · `removeRows {table, key|match|rows}` · `addColumn {table,name,values?}` ·
-charts: `addChart {type, range|table(+x,y)|value, title, at, dx, dy, w, h}` · `updateChart {id,…}` · `deleteChart {id}` ·
+charts: `addChart {type (column|bar|line|area|pie|kpi|viz), range|table(+x,y)|value, pack (viz), title, at, dx, dy, w, h}` · `updateChart {id,…}` · `deleteChart {id}` ·
 traffic lights: `cond {range, rules:[{when, value, value2?, light|style}], id?}` · `removeCond {id | range}` ·
 live: `liveLayout {order, spans (span 0.5 = small tile), hidden, flow, reveal, slots, links, fx}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}` ·
 `slide {id, index?, title, text, sheet, mode, focus, cards, bg:{image, filter, theme}, duration}` · `removeSlide {id}`.

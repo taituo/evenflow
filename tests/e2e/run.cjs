@@ -607,6 +607,128 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   if (restoreSlides) await ops([{ op: 'liveLayout', slides: restoreSlides }]);   // keep later tests independent of a failure above
 
+  // ================================================================ SVG visual packs
+  await t('visuals: picker previews every pack; install from JSON (errors explained); card and in-cells', async () => {
+    const G = await page('viz-grid', { width: 1440, height: 900 }, '/#main');
+    await goto(G, 'Project!C7:C10');
+    await G.click('[data-a=visuals]');
+    await G.waitForSelector('.vizpop .vp-pack');
+    const ids = await G.locator('.vizpop .vp-pack').evaluateAll((xs) => xs.map((x) => x.dataset.id));
+    for (const id of ['lamp', 'switch', 'gauge', 'battery', 'ring', 'traffic', 'status', 'weather']) ok(ids.includes(id), 'pack listed: ' + id);
+    const imgs = await G.locator('.vizpop .vp-prev img').evaluateAll((xs) => xs.map((x) => x.complete && x.naturalWidth > 0));
+    ok(imgs.length >= 20 && imgs.every(Boolean), 'previews render: ' + imgs.length);
+    // install: a broken pack first (the message lists what to fix), then a good one
+    await G.locator('.vp-install summary').click();
+    await G.fill('.vp-install textarea', JSON.stringify({ spec: 'spread-viz/1', id: 'tank', kind: 'range', svg: '<svg><script>x</script></svg>' }));
+    await G.click('[data-x=install]');
+    await until(async () => /Not installed/.test(await G.locator('.vp-msg').textContent()), 5000, 'error shown');
+    const msg = await G.locator('.vp-msg').textContent();
+    ok(/viewBox/.test(msg) && /script/.test(msg), 'both problems listed: ' + msg);
+    await sleep(300);
+    for (let i = errors.length - 1; i >= 0; i--) if (/\[viz-grid\] console: .*status of 400/.test(errors[i])) errors.splice(i, 1);   // that 400 was the point
+    const tank = { spec: 'spread-viz/1', id: 'tank', kind: 'range', name: 'Tank', svg: '<svg viewBox="0 0 80 100"><style>.w{fill:#4ea1ff;transform-box:fill-box;transform-origin:center bottom;transform:scaleY(var(--v))}</style><rect class="w" x="10" y="10" width="60" height="80"/><text x="40" y="98">{{pct}}%</text></svg>' };
+    await G.fill('.vp-install textarea', '```json\n' + JSON.stringify(tank) + '\n```');   // a model's reply, fences and all
+    await G.click('[data-x=install]');
+    await until(async () => /Installed “tank”/.test(await G.locator('.vp-msg').textContent()), 5000, 'installed');
+    await until(() => G.locator('.vizpop .vp-pack[data-id="tank"]').count(), 5000, 'listed right away');
+    // "In cells": =VIZ next to the selection
+    await G.locator('.vizpop .vp-pack[data-id="traffic"] [data-x=cells]').click();
+    await until(async () => Object.values((await docNow()).sheets[0].cells).some((c) => c.v === '=VIZ("traffic",C7)'), 5000, 'formulas written');
+    // "Card"
+    await goto(G, 'Project!C12');
+    await G.click('[data-a=visuals]');
+    await G.locator('.vizpop .vp-pack[data-id="tank"] [data-x=card]').click();
+    await until(async () => (await docNow()).sheets[0].charts?.some((c) => c.type === 'viz' && c.pack === 'tank'), 5000, 'viz card added');
+    ok(errors.filter((e) => e.startsWith('[viz-grid]')).length === 0, 'no errors');
+    await G.screenshot({ path: path.join(SHOTS, 'viz-grid.png') });
+    await G.context().close();
+  });
+
+  await t('visuals in Live: a lamp switches, a gauge glides in place, states cross-fade, pictures in table cells', async () => {
+    await ops([
+      { op: 'set', sheet: 'Settings', cells: { A20: 'Robot on', B20: '0', A21: 'Load', B21: '20', A22: 'Weather', B22: 'sunny' } },
+      { op: 'addChart', sheet: 'Dashboard', id: 'lamp1', type: 'viz', pack: 'lamp', value: 'Settings!B20', title: 'Robot on', at: 'K40' },
+      { op: 'addChart', sheet: 'Dashboard', id: 'gauge1', type: 'viz', pack: 'gauge', value: 'Settings!B21', title: 'Load', at: 'K48' },
+      { op: 'addChart', sheet: 'Dashboard', id: 'wx1', type: 'viz', pack: 'weather', value: 'Settings!B22', title: 'Weather', at: 'K56' },
+    ]);
+    const V = await page('viz-live', { width: 1440, height: 900 }, '/?live=Dashboard&mode=auto#main');
+    const host = (id) => V.locator(`.lv-card[data-key="Dashboard::chart:${id}"] .lv-vizhost`);
+    const state = (id) => host(id).evaluate((h) => h.dataset.state);
+    await until(async () => (await state('lamp1')) === 'off', 15000, 'lamp off');
+    await ops([{ op: 'set', sheet: 'Settings', cells: { B20: '1' } }]);
+    await until(async () => (await state('lamp1')) === 'on', 8000, 'lamp on');
+    const bulb = await host('lamp1').evaluate((h) => getComputedStyle(h.shadowRoot.querySelector('.bulb')).fill);
+    ok(/255, 213, 74|ffd54a/i.test(bulb), 'bulb lit: ' + bulb);
+    // gauge: same SVG node, new --v, new text
+    const mark = await host('gauge1').evaluate((h) => { const s = h.shadowRoot.querySelector('svg'); s.__mark = 1; return s.style.getPropertyValue('--v'); });
+    eq(mark.trim(), '0.2', 'gauge at 20');
+    await ops([{ op: 'set', sheet: 'Settings', cells: { B21: '85' } }]);
+    await until(async () => (await host('gauge1').evaluate((h) => h.shadowRoot.querySelector('svg').style.getPropertyValue('--v').trim())) === '0.85', 8000, 'gauge at 85');
+    const g2 = await host('gauge1').evaluate((h) => { const s = h.shadowRoot.querySelector('svg'); return { same: s.__mark === 1, level: s.getAttribute('data-level'), text: s.querySelector('text').textContent }; });
+    ok(g2.same, 'no re-mount (the needle glides)');
+    eq([g2.level, g2.text], ['9', '85'], 'level + text');
+    // states: a second frame fades in, the first fades out
+    await ops([{ op: 'set', sheet: 'Settings', cells: { B22: 'Sade' } }]);
+    await until(async () => (await state('wx1')) === 'rain', 8000, 'rain');
+    const frames = await host('wx1').evaluate((h) => [...h.shadowRoot.querySelectorAll('.f')].map((f) => f.classList.contains('off')));
+    eq(frames.sort(), [false, true], 'two frames, one visible');
+    eq(await V.locator('.lv-card[data-key="Dashboard::chart:wx1"] .lv-vizcap').textContent(), 'Rain', 'state caption');
+    // =VIZ in a table column: pictures in the cells, following the data
+    const tr = (await tableRange('Tasks')).split('!')[1];
+    const [t1, t2] = tr.split(':'); const r1 = +t1.replace(/\D+/g, ''), r2 = +t2.replace(/\D+/g, '');
+    const lc = String.fromCharCode(t2.replace(/\d+/g, '').charCodeAt(0) + 1);
+    const vcells = {}; for (let r = r1 + 1; r <= r2; r++) vcells[`${lc}${r}`] = `=VIZ("traffic",C${r})`;
+    await ops([{ op: 'addColumn', table: 'Tasks', name: 'Light' }, { op: 'set', sheet: 'Project', cells: vcells }]);
+    const cells = V.locator('.lv-card[data-key="Project::table:Tasks"] .lv-vizcell');
+    await until(async () => (await cells.count()) >= 3, 8000, 'viz cells in the table');
+    const vizCell = [`${lc}${r1 + 1}`], src = `C${r1 + 1}`;
+    await ops([{ op: 'set', sheet: 'Project', cells: { [src]: 'late' } }]);
+    await until(async () => (await V.locator(`.lv-card[data-key="Project::table:Tasks"] td[data-a="${vizCell[0]}"] .lv-vizcell`).evaluate((h) => h.dataset.state)) === 'red', 8000, 'cell light turned red');
+    await sleep(2500);
+    // the column insert moved the Parts table right: its card must follow the cells, not keep stale addresses
+    eq((await V.locator('.lv-card[data-key="Project::table:Parts"] tbody tr').first().locator('td').allTextContents()).map((x) => x.trim()), ['Servo', '12.5'], 'Parts card re-addressed');
+    await V.screenshot({ path: path.join(SHOTS, 'viz-live.png') });
+    await V.context().close();
+  });
+
+  await t('hostile SVG: nothing runs, nothing loads, nothing leaks — even past the server check', async () => {
+    const H = await page('viz-evil', { width: 1000, height: 700 }, '/#main');
+    const external = [];
+    H.on('request', (r) => { if (/evil\.example/.test(r.url())) external.push(r.url()); });
+    const res = await H.evaluate(async () => {
+      const m = await import('/canvases/sheet/viz-dom.js');
+      const evil = '<svg viewBox="0 0 100 100" onload="window.__x1=1"><script>window.__x2=1</script>'
+        + '<style>@import url(http://evil.example/a.css); body{display:none!important} circle{fill:url(http://evil.example/b)}</style>'
+        + '<foreignObject width="100" height="100"><img xmlns="http://www.w3.org/1999/xhtml" src="x" onerror="window.__x3=1"/></foreignObject>'
+        + '<image href="http://evil.example/c.png" width="10" height="10"/><a href="javascript:window.__x4=1"><rect width="50" height="50"/></a>'
+        + '<use href="http://evil.example/d.svg#x"/><set attributeName="href" to="javascript:window.__x5=1"/><circle cx="50" cy="50" r="20" onclick="window.__x6=1" style="fill:url(http://evil.example/e)"/>'
+        + '<text>{{value}}</text></svg>';
+      m.setPacks([{ spec: 'spread-viz/1', id: 'evil', kind: 'toggle', svg: evil }]);
+      const host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:0;top:0;width:200px;height:200px';
+      document.body.append(host);
+      m.renderViz(host, 'evil', '<img src=x onerror="window.__x7=1">');
+      const img = m.vizImage('evil', 1, null, 100, 100, () => {});
+      await new Promise((r) => setTimeout(r, 1500));
+      host.shadowRoot.querySelector('rect')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      host.shadowRoot.querySelector('circle')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const sr = host.shadowRoot.innerHTML;
+      return {
+        flags: [1, 2, 3, 4, 5, 6, 7].filter((i) => window['__x' + i]),
+        bodyVisible: getComputedStyle(document.body).display !== 'none',
+        bad: ['<script', 'foreignObject', '<image', 'javascript:', 'onload', 'onclick', 'evil.example', '@import', '<set'].filter((b) => sr.includes(b)),
+        textEscaped: host.shadowRoot.querySelector('text').textContent.startsWith('<img'),
+      };
+    });
+    eq(res.flags, [], 'no script ran');
+    ok(res.bodyVisible, 'pack styles stay in their shadow root');
+    eq(res.bad, [], 'sanitized');
+    ok(res.textEscaped, 'value shown as text');
+    await sleep(500);
+    eq(external, [], 'no external request');
+    await H.context().close();
+  });
+
   // ================================================================ hostile content
   await t('HTML in cells, slide text, names and notes is shown as text, never run', async () => {
     const evil = '<img src=x onerror="window.__xss=1">';

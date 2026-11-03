@@ -1,6 +1,8 @@
 // Lazy, memoized workbook evaluator. Shared by server (change tracking) and browser (rendering).
 import { addr, parseAddr, sameName } from './a1.js';
 import { parse, literal, FErr, isErr, E } from './formula.js';
+import { Viz } from './viz.js';
+export { Viz, isViz } from './viz.js';
 
 const err = (c) => new FErr(c);
 const isRange = (v) => v && v.__range;
@@ -15,6 +17,7 @@ export const isImg = (v) => v instanceof Img;
 export function fmtValue(v) {
   if (v === null || v === undefined) return '';
   if (v instanceof Img) return `[image ${v.url}]`;
+  if (v instanceof Viz) return fmtValue(v.value);
   if (isErr(v)) return v.code;
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
   if (typeof v === 'number') {
@@ -364,6 +367,14 @@ export const FN = {
   NA: () => err(E.NA),
   PI: () => Math.PI,
   IMAGE: (en, a, sh) => { need(a, 1, 2); const u = str(en.arg(a[0], sh)).trim(); if (!u) return err(E.VALUE); return new Img(u, a[1] ? num(en.arg(a[1], sh)) : 1); },
+  VIZ: (en, a, sh) => {
+    need(a, 2, 3);
+    const p = str(en.arg(a[0], sh)).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(p)) return err(E.VALUE);
+    const v = en.arg(a[1], sh);
+    if (isErr(v)) return v;
+    return new Viz(p, v, a[2] ? str(en.arg(a[2], sh)) : null);
+  },
   HYPERLINK: (en, a, sh) => (a[1] ? en.arg(a[1], sh) : en.arg(a[0], sh)),
 };
 

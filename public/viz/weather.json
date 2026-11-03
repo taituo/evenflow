@@ -1,0 +1,67 @@
+{
+  "spec": "spread-viz/1",
+  "id": "weather",
+  "kind": "states",
+  "name": "Weather",
+  "description": "Sunny, partly cloudy, rain, storm — English or Finnish words; anything else is cloudy.",
+  "states": [
+    {
+      "id": "sunny",
+      "label": "Sunny",
+      "when": "=",
+      "value": [
+        "sunny",
+        "sun",
+        "clear",
+        "aurinko",
+        "aurinkoinen",
+        "selkeä"
+      ],
+      "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><g><animateTransform attributeName=\"transform\" type=\"rotate\" from=\"0 50 50\" to=\"360 50 50\" dur=\"24s\" repeatCount=\"indefinite\"/><circle cx=\"50\" cy=\"50\" r=\"17\" fill=\"#ffc83d\"/><g stroke=\"#ffc83d\" stroke-width=\"6\" stroke-linecap=\"round\"><line x1=\"50\" y1=\"12\" x2=\"50\" y2=\"22\"/><line x1=\"50\" y1=\"78\" x2=\"50\" y2=\"88\"/><line x1=\"12\" y1=\"50\" x2=\"22\" y2=\"50\"/><line x1=\"78\" y1=\"50\" x2=\"88\" y2=\"50\"/><line x1=\"23\" y1=\"23\" x2=\"30\" y2=\"30\"/><line x1=\"70\" y1=\"70\" x2=\"77\" y2=\"77\"/><line x1=\"77\" y1=\"23\" x2=\"70\" y2=\"30\"/><line x1=\"30\" y1=\"70\" x2=\"23\" y2=\"77\"/></g></g></svg>"
+    },
+    {
+      "id": "partly",
+      "label": "Partly cloudy",
+      "when": "=",
+      "value": [
+        "partly",
+        "partly cloudy",
+        "puolipilvi",
+        "puolipilvinen"
+      ],
+      "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><g transform=\"translate(-12 -12) scale(.85)\"><circle cx=\"50\" cy=\"50\" r=\"17\" fill=\"#ffc83d\"/><g stroke=\"#ffc83d\" stroke-width=\"6\" stroke-linecap=\"round\"><line x1=\"50\" y1=\"12\" x2=\"50\" y2=\"22\"/><line x1=\"50\" y1=\"78\" x2=\"50\" y2=\"88\"/><line x1=\"12\" y1=\"50\" x2=\"22\" y2=\"50\"/><line x1=\"78\" y1=\"50\" x2=\"88\" y2=\"50\"/><line x1=\"23\" y1=\"23\" x2=\"30\" y2=\"30\"/><line x1=\"70\" y1=\"70\" x2=\"77\" y2=\"77\"/><line x1=\"77\" y1=\"23\" x2=\"70\" y2=\"30\"/><line x1=\"30\" y1=\"70\" x2=\"23\" y2=\"77\"/></g></g><path transform=\"translate(0 6)\" d=\"M30 74h42a15 15 0 0 0 2-30 21 21 0 0 0-40-4 17 17 0 0 0-4 34z\" fill=\"#e8ecf5\"/></svg>"
+    },
+    {
+      "id": "rain",
+      "label": "Rain",
+      "when": "=",
+      "value": [
+        "rain",
+        "rainy",
+        "showers",
+        "sade",
+        "sateinen"
+      ],
+      "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><path transform=\"translate(0 -8)\" d=\"M30 74h42a15 15 0 0 0 2-30 21 21 0 0 0-40-4 17 17 0 0 0-4 34z\" fill=\"#c3cad8\"/><g stroke=\"#4ea1ff\" stroke-width=\"5\" stroke-linecap=\"round\"><line x1=\"36\" y1=\"76\" x2=\"32\" y2=\"88\"><animate attributeName=\"opacity\" values=\"1;.2;1\" dur=\"1s\" repeatCount=\"indefinite\"/></line><line x1=\"52\" y1=\"76\" x2=\"48\" y2=\"88\"><animate attributeName=\"opacity\" values=\".2;1;.2\" dur=\"1s\" repeatCount=\"indefinite\"/></line><line x1=\"68\" y1=\"76\" x2=\"64\" y2=\"88\"><animate attributeName=\"opacity\" values=\"1;.2;1\" dur=\"1.2s\" repeatCount=\"indefinite\"/></line></g></svg>"
+    },
+    {
+      "id": "storm",
+      "label": "Storm",
+      "when": "=",
+      "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><path transform=\"translate(0 -8)\" d=\"M30 74h42a15 15 0 0 0 2-30 21 21 0 0 0-40-4 17 17 0 0 0-4 34z\" fill=\"#7d8599\"/><path d=\"M54 62l-14 20h12l-6 16 18-24H52l8-12z\" fill=\"#ffd54a\"><animate attributeName=\"opacity\" values=\"1;1;.2;1;.4;1\" dur=\"2.4s\" repeatCount=\"indefinite\"/></path></svg>",
+      "value": [
+        "storm",
+        "thunder",
+        "thunderstorm",
+        "ukkonen",
+        "myrsky"
+      ]
+    },
+    {
+      "id": "cloudy",
+      "label": "Cloudy",
+      "when": "any",
+      "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\"><path transform=\"translate(0 -14)\" d=\"M30 74h42a15 15 0 0 0 2-30 21 21 0 0 0-40-4 17 17 0 0 0-4 34z\" fill=\"#aeb6c8\"/><path transform=\"translate(0 4)\" d=\"M30 74h42a15 15 0 0 0 2-30 21 21 0 0 0-40-4 17 17 0 0 0-4 34z\" fill=\"#e8ecf5\"/></svg>"
+    }
+  ]
+}

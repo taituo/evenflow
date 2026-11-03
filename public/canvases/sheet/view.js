@@ -1,6 +1,8 @@
 // Spreadsheet canvas view. Canvas-rendered, virtualized grid with Sheets-style interactions.
 import { addr, parseAddr, colToName, parseRange, rangeToString, splitSheet, quoteSheet, sameName, norm, inRange } from '../../shared/a1.js';
-import { Engine, fmtValue, isImg } from '../../shared/engine.js';
+import { Engine, fmtValue, isImg, isViz } from '../../shared/engine.js';
+import { vizImage, allPacks, onPacks, getPack, vizDataUrl } from './viz-dom.js';
+import { setRedraw } from './charts.js';
 import { shiftFormula, refSpans, autoClose, literal, isErr, refBox } from '../../shared/formula.js';
 import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES, tableColumns } from '../../shared/types/sheet.js';
 import { drawChart } from './charts.js';
@@ -131,6 +133,8 @@ export function mount(root, ctx) {
 
   // ================================================================ rendering
   function requestDraw() { if (!raf) raf = requestAnimationFrame(draw); }
+  setRedraw(requestDraw);
+  const offPacks = onPacks(() => { live?.update(); requestDraw(); });
 
   function resize() {
     dpr = window.devicePixelRatio || 1;
@@ -253,6 +257,7 @@ export function mount(root, ctx) {
     if (!has) return;
     const v = v0;
     if (isImg(v)) { drawImg(v, x, y, w, h); return; }
+    if (isViz(v)) { drawVizCell(v, x, y, w, h); return; }
     const t = fmtValue(v);
     if (!t) return;
     const fsz = (st.fs || FONT) * z;
@@ -286,6 +291,19 @@ export function mount(root, ctx) {
   }
 
   const imgCache = new Map();
+  function drawVizCell(v, x, y, w, h) {
+    // the pack's picture fills the cell height; text cells beside it stay readable
+    const s = Math.max(8, Math.min(w, h) - 4);
+    const img = getPack(v.pack) ? vizImage(v.pack, v.value, v.label, s * dpr, s * dpr, requestDraw) : null;
+    if (img) {
+      const pr = img.naturalWidth / img.naturalHeight || 1;
+      const dw = Math.min(w - 4, s * pr), dh = dw / pr;
+      g.drawImage(img, x + 2, y + (h - dh) / 2, dw, dh);
+    } else if (!getPack(v.pack)) {
+      g.fillStyle = '#d93025'; g.font = `${11 * z}px system-ui`; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(`no pack ${v.pack}`, x + 4, y + h / 2); g.textBaseline = 'alphabetic';
+    }
+  }
   function drawImg(v, x, y, w, h) {
     let e = imgCache.get(v.url);
     if (!e) {
@@ -1243,6 +1261,7 @@ export function mount(root, ctx) {
     <button class="tb" data-a="table" title="Make a named table from the selection">▦</button>
     <button class="tb" data-a="chart" title="Insert chart from selection (or table / KPI from one cell)">📊</button>
     <button class="tb" data-a="traffic" title="Traffic lights: color cells by their value (conditional formatting)">🚦</button>
+    <button class="tb" data-a="visuals" title="SVG visuals: show a value as a lamp, gauge, battery, status icon… (or install a pack)">🎨</button>
     <div class="sep"></div>
     <button class="tb" data-a="freeze" title="Freeze rows/cols up to the active cell">❄</button>
     <button class="tb" data-a="grid" title="Show / hide gridlines (dashboard look)">#</button>
@@ -1295,8 +1314,89 @@ export function mount(root, ctx) {
       case 'table': return createTable(btn);
       case 'sum': return autoSum();
       case 'traffic': return trafficEditor(btn.getBoundingClientRect());
+      case 'visuals': return visualsPopover(btn.getBoundingClientRect());
     }
   }
+
+  // ---------------------------------------------------------------- SVG visuals (spread-viz packs)
+  function visualsPopover(anchor) {
+    const R = clampFull(lastR()), s = sh();
+    const A = addr(sel.active.c, sel.active.r);
+    const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const previews = (p) => {
+      if (p.kind === 'states') return p.states.map((st) => `<img alt="" title="${esc(st.label || st.id)}" src="${vizDataUrl({ ...p, states: [st] }, '?', null, 64, 64)}">`).join('');
+      if (p.kind === 'toggle') return [1, 0].map((v) => `<img alt="" src="${vizDataUrl(p, v, null, 64, 64)}">`).join('');
+      return [0.15, 0.55, 0.9].map((k) => `<img alt="" src="${vizDataUrl(p, p.min + (p.max - p.min) * k, null, 64, 64)}">`).join('');
+    };
+    ctx.popover(anchor, (pop, close) => {
+      pop.classList.add('vizpop');
+      const listHtml = () => allPacks().map((p) => `<div class="vp-pack" data-id="${esc(p.id)}">
+            <div class="vp-prev">${previews(p)}</div>
+            <div class="vp-meta"><b>${esc(p.name)}</b> <small>${esc(p.kind)}${p.builtin ? '' : ' · custom'}</small><div>${esc(p.description || '')}</div></div>
+            <div class="vp-act"><button class="btn2" data-x="card" title="A visual card showing ${esc(A)}">Card</button><button class="btn2" data-x="cells" title="=VIZ() next to each selected cell">In cells</button>${p.builtin ? '' : '<button class="btn2" data-x="del" title="Delete this pack">✕</button>'}</div>
+          </div>`).join('');
+      pop.innerHTML = `<div class="vp-h">🎨 Visuals <span>value from <code>${esc(s.name)}!${rangeToString(R)}</code></span></div>
+          <div class="vp-list">${listHtml()}</div>
+          <details class="vp-install"><summary>Install a pack (JSON from any model)</summary>
+            <p>Packs follow <a href="/api/viz/spec" target="_blank" rel="noopener">spread-viz/1</a>. <button class="btn2" data-x="prompt">Copy a prompt for a model</button></p>
+            <textarea rows="6" placeholder='{"spec":"spread-viz/1","id":"…","kind":"states", …}'></textarea>
+            <div class="vp-msg"></div>
+            <button class="btn" data-x="install">Validate &amp; install</button>
+          </details>`;
+      // packs arriving (installed here, by an agent, or by another user) refresh the list, not the installer
+      const draw = () => { pop.querySelector('.vp-list').innerHTML = listHtml(); };
+      const off = onPacks(draw);
+      const obs = new MutationObserver(() => { if (!pop.isConnected) { off(); obs.disconnect(); } });
+      obs.observe(document.body, { childList: true });
+      pop.addEventListener('keydown', (e) => e.stopPropagation());
+      pop.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-x]');
+        if (!b) return;
+        const id = b.closest('[data-id]')?.dataset.id;
+        const msg = pop.querySelector('.vp-msg');
+        switch (b.dataset.x) {
+          case 'card': {
+            let n = 1; while (doc.sheets.some((x) => (x.charts || []).some((c) => c.id === 'viz' + n))) n++;
+            const title = String(s.cells[addr(Math.max(0, sel.active.c - 1), sel.active.r)]?.v ?? '').slice(0, 40);
+            close();
+            submit([{ op: 'addChart', id: 'viz' + n, sheet: s.name, type: 'viz', pack: id, value: A, title: title && title[0] !== '=' ? title : getPack(id)?.name, at: addr(R.c2 + 2, R.r1) }]);
+            selChart = 'viz' + n; requestDraw();
+            return;
+          }
+          case 'cells': {
+            // =VIZ("pack", ref) for every selected cell, in the first free column to the right
+            let col = R.c2 + 1;
+            const free = (c) => { for (let r = R.r1; r <= R.r2; r++) if (s.cells[addr(c, r)]?.v) return false; return true; };
+            while (!free(col) && col < R.c2 + 30) col++;
+            const cells = {};
+            for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 2000); r++) for (let c = R.c1; c <= R.c1; c++) cells[addr(col, r)] = `=VIZ("${id}",${addr(c, r)})`;
+            close();
+            submit([{ op: 'set', sheet: s.name, cells }]);
+            setActive({ c: col, r: R.r1 });
+            return;
+          }
+          case 'del': if (confirmDel(id)) { const r = await fetch('/api/viz?by=user&id=' + encodeURIComponent(id), { method: 'DELETE' }); if (!r.ok) ctx.toast((await r.json()).error, true); } return;
+          case 'prompt': {
+            const spec = await (await fetch('/api/viz/spec')).text();
+            const text = `Make an SVG visual pack for my spreadsheet dashboard.\nIt should show: <describe it — e.g. "a water tank 0–100 %" or "5 moods from great to awful">.\nReply with only the JSON, following this spec exactly:\n\n${spec}`;
+            try { await navigator.clipboard.writeText(text); ctx.toast('Prompt copied — paste it into any model, then paste its JSON here'); } catch { ctx.toast('Could not copy', true); }
+            return;
+          }
+          case 'install': {
+            let pack;
+            try { pack = JSON.parse(pop.querySelector('textarea').value.trim().replace(/^```(json)?|```$/g, '')); } catch (er) { msg.innerHTML = `<b class="bad">Not JSON:</b> ${esc(er.message)}`; return; }
+            const r = await fetch('/api/viz?by=user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pack) });
+            const j = await r.json();
+            if (!r.ok) { msg.innerHTML = `<b class="bad">Not installed</b><ul>${(j.errors || [j.error]).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`; return; }
+            msg.innerHTML = `<b class="good">Installed “${esc(j.id)}”</b>${j.warnings?.length ? `<ul>${j.warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
+            pop.querySelector('textarea').value = '';
+            return;
+          }
+        }
+      });
+    });
+  }
+  const confirmDel = (id) => window.confirm?.(`Delete visual pack “${id}”? Cells and cards using it will show “no pack”.`);
 
   // ---------------------------------------------------------------- traffic lights editor
   const WHEN_LABEL = { '<': '<', '<=': '≤', '>': '>', '>=': '≥', '=': '=', '<>': '≠', between: 'between', contains: 'contains', empty: 'is empty', notEmpty: 'not empty', any: 'anything' };
@@ -2039,7 +2139,7 @@ export function mount(root, ctx) {
   ed.focus();
 
   return {
-    unmount() { live?.close(); ro.disconnect(); document.removeEventListener('keydown', docKey, true); ctx.toolbar.innerHTML = ''; },
+    unmount() { offPacks(); live?.close(); ro.disconnect(); document.removeEventListener('keydown', docKey, true); ctx.toolbar.innerHTML = ''; },
     reload() { undoStack = []; redoStack = []; refresh(); },
     resized: () => setTimeout(resize, 0),
     present(o) { if (o.off) return live?.close(); startLive(o); },

@@ -495,3 +495,23 @@ tr.fx-row-in > td { animation: fx-row-in .7s cubic-bezier(.2,.8,.2,1) calc(var(-
 body.sv-moving .sv-tab:not(.on) { outline: 1px dashed #a8c7fa; outline-offset: -3px; }
 body.sv-moving-table, body.sv-moving-table * { cursor: grabbing !important; }
 #btnRemote { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
+
+/* SVG visuals */
+.lv-vizcard { display: flex; flex-direction: column; }
+.lv-vizhost { flex: 1; min-height: 0; color: #fff; margin: 4px 0; }
+.lv-ink-dark .lv-vizhost { color: #15152b; }
+.lv-vizcap { text-align: center; font-size: 13px; font-weight: 600; letter-spacing: .04em; opacity: .8; min-height: 1.2em; }
+.lv-small.lv-vizcard .lv-vizcap { font-size: 11px; }
+.lv-vizcell { display: inline-block; width: 1.9em; height: 1.9em; vertical-align: middle; color: currentColor; margin: -4px 0; }
+.lv-card.lv-focus .lv-vizhost { margin: 2vh 0; }
+.vizpop { display: block; width: 560px; max-width: calc(100vw - 16px); max-height: 74vh; overflow: auto; font: 12px system-ui; padding: 10px 12px; }
+.vp-h { font-weight: 600; margin-bottom: 8px; } .vp-h span { color: #80868b; font-weight: 400; margin-left: 6px; } .vp-h code { color: #1a73e8; }
+.vp-pack { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid #eceef1; }
+.vp-prev { display: flex; gap: 3px; background: #f1f3f4; border-radius: 8px; padding: 4px; max-width: 220px; flex-wrap: wrap; }
+.vp-prev img { width: 38px; height: 38px; }
+.vp-meta small { color: #80868b; } .vp-meta div { color: #5f6368; margin-top: 2px; }
+.vp-act { display: flex; gap: 4px; }
+.vp-install { margin-top: 10px; border-top: 1px solid #eceef1; padding-top: 8px; }
+.vp-install summary { cursor: pointer; font-weight: 600; color: #1a73e8; }
+.vp-install textarea { width: 100%; font: 12px ui-monospace, monospace; box-sizing: border-box; margin: 6px 0; }
+.vp-msg ul { margin: 4px 0 6px; padding-left: 18px; color: #3c4043; } .vp-msg .bad { color: #c5221f; } .vp-msg .good { color: #188038; }

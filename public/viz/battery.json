@@ -1,0 +1,10 @@
+{
+  "spec": "spread-viz/1",
+  "id": "battery",
+  "kind": "range",
+  "name": "Battery",
+  "min": 0,
+  "max": 100,
+  "description": "Charge level: red under 25 %, amber under 50 %.",
+  "svg": "<svg viewBox=\"0 0 140 70\" xmlns=\"http://www.w3.org/2000/svg\">\n<style>\n.lvl{fill:#34c759;transform-box:fill-box;transform-origin:left center;transform:scaleX(var(--v))}\n[data-level=\"0\"] .lvl,[data-level=\"1\"] .lvl,[data-level=\"2\"] .lvl{fill:#ea4335}\n[data-level=\"3\"] .lvl,[data-level=\"4\"] .lvl{fill:#f9ab00}\n.pct{font:700 20px system-ui,sans-serif;text-anchor:middle;dominant-baseline:central;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:3px}\n</style>\n<rect x=\"3\" y=\"6\" width=\"118\" height=\"58\" rx=\"11\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"5\"/>\n<rect x=\"124\" y=\"23\" width=\"12\" height=\"24\" rx=\"4\" fill=\"currentColor\"/>\n<rect class=\"lvl\" x=\"11\" y=\"14\" width=\"102\" height=\"42\" rx=\"6\"/>\n<text class=\"pct\" x=\"62\" y=\"35\">{{pct}}%</text>\n</svg>"
+}

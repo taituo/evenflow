@@ -148,6 +148,9 @@ export function backSide(it, { doc, chartData }) {
   } else if (it.kind === 'kpi') {
     head(it.ch.value, `kpi ${it.ch.id}`);
     h.push(`<div class="lv-back-f">${esc(rawOf(doc, it.ch.value, it.sheet))}</div><div class="lv-back-v">⇒ ${esc(it.data.kpi.text)}</div>`);
+  } else if (it.kind === 'viz') {
+    head(it.ch.value, `visual “${it.ch.pack}” ${it.ch.id}`);
+    h.push(`<div class="lv-back-f">${esc(rawOf(doc, it.ch.value, it.sheet))}</div><div class="lv-back-v">⇒ ${esc(it.data.viz.text)}</div>`);
   } else if (it.kind === 'stat') {
     head(`${it.sheet}!${it.value.A}`, it.label);
     h.push(`<div class="lv-back-f">${esc(it.value.raw)}</div><div class="lv-back-v">⇒ ${esc(it.value.text)}</div>`);

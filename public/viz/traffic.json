@@ -1,0 +1,62 @@
+{
+  "spec": "spread-viz/1",
+  "id": "traffic",
+  "kind": "states",
+  "name": "Traffic light",
+  "description": "Green / amber / red from words (ok, done, open, late…) — anything else is off.",
+  "states": [
+    {
+      "id": "green",
+      "label": "OK",
+      "when": "=",
+      "value": [
+        "green",
+        "ok",
+        "done",
+        "pass",
+        "yes",
+        "valmis",
+        "vihreä"
+      ],
+      "svg": "<svg viewBox=\"0 0 60 150\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"4\" y=\"4\" width=\"52\" height=\"142\" rx=\"14\" fill=\"#1f2233\"/>\n<circle cx=\"30\" cy=\"31\" r=\"17\" fill=\"#4a2a2a\"/>\n<circle cx=\"30\" cy=\"75\" r=\"17\" fill=\"#4a3f22\"/>\n<circle cx=\"30\" cy=\"119\" r=\"17\" fill=\"#34c759\"/>\n<circle cx=\"30\" cy=\"119\" r=\"26\" fill=\"none\" stroke=\"#34c759\" stroke-opacity=\".35\" stroke-width=\"6\"/>\n</svg>"
+    },
+    {
+      "id": "amber",
+      "label": "Watch",
+      "when": "=",
+      "value": [
+        "amber",
+        "yellow",
+        "warn",
+        "warning",
+        "open",
+        "pending",
+        "wip",
+        "keltainen"
+      ],
+      "svg": "<svg viewBox=\"0 0 60 150\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"4\" y=\"4\" width=\"52\" height=\"142\" rx=\"14\" fill=\"#1f2233\"/>\n<circle cx=\"30\" cy=\"31\" r=\"17\" fill=\"#4a2a2a\"/>\n<circle cx=\"30\" cy=\"75\" r=\"17\" fill=\"#f9ab00\"/>\n<circle cx=\"30\" cy=\"119\" r=\"17\" fill=\"#1f3f2a\"/>\n<circle cx=\"30\" cy=\"75\" r=\"26\" fill=\"none\" stroke=\"#f9ab00\" stroke-opacity=\".35\" stroke-width=\"6\"/>\n</svg>"
+    },
+    {
+      "id": "red",
+      "label": "Stop",
+      "when": "=",
+      "value": [
+        "red",
+        "error",
+        "fail",
+        "late",
+        "blocked",
+        "down",
+        "no",
+        "punainen"
+      ],
+      "svg": "<svg viewBox=\"0 0 60 150\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"4\" y=\"4\" width=\"52\" height=\"142\" rx=\"14\" fill=\"#1f2233\"/>\n<circle cx=\"30\" cy=\"31\" r=\"17\" fill=\"#ea4335\"/>\n<circle cx=\"30\" cy=\"75\" r=\"17\" fill=\"#4a3f22\"/>\n<circle cx=\"30\" cy=\"119\" r=\"17\" fill=\"#1f3f2a\"/>\n<circle cx=\"30\" cy=\"31\" r=\"26\" fill=\"none\" stroke=\"#ea4335\" stroke-opacity=\".35\" stroke-width=\"6\"/>\n</svg>"
+    },
+    {
+      "id": "off",
+      "label": "—",
+      "when": "any",
+      "svg": "<svg viewBox=\"0 0 60 150\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"4\" y=\"4\" width=\"52\" height=\"142\" rx=\"14\" fill=\"#1f2233\"/>\n<circle cx=\"30\" cy=\"31\" r=\"17\" fill=\"#4a2a2a\"/>\n<circle cx=\"30\" cy=\"75\" r=\"17\" fill=\"#4a3f22\"/>\n<circle cx=\"30\" cy=\"119\" r=\"17\" fill=\"#1f3f2a\"/>\n\n</svg>"
+    }
+  ]
+}

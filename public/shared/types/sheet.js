@@ -688,8 +688,8 @@ function opSetConds(st, op) {
 }
 
 // ------------------------------------------------------------------ charts (floating, live)
-export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi'];
-const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors'];
+export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz'];
+const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors'];
 export function allCharts(st) { const out = []; for (const sh of st.sheets) for (const ch of sh.charts || []) out.push({ sh, ch }); return out; }
 function findChart(st, id) {
   const x = allCharts(st).find((x) => x.ch.id === id);
@@ -698,7 +698,10 @@ function findChart(st, id) {
 }
 function checkChart(ch) {
   if (!CHART_TYPES.includes(ch.type)) fail(`Bad chart type "${ch.type}" (${CHART_TYPES.join('|')})`);
-  if (ch.type === 'kpi' ? !ch.value : !ch.range && !ch.table) fail(ch.type === 'kpi' ? 'kpi chart needs value (cell, e.g. "C12")' : 'chart needs range ("B6:C10") or table');
+  if (ch.type === 'viz') {
+    if (!ch.value) fail('viz chart needs value (cell, e.g. "C12")');
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(ch.pack || ''))) fail('viz chart needs pack (an SVG pack id, e.g. "battery")');
+  } else if (ch.type === 'kpi' ? !ch.value : !ch.range && !ch.table) fail(ch.type === 'kpi' ? 'kpi chart needs value (cell, e.g. "C12")' : 'chart needs range ("B6:C10") or table');
   if (!parseRange(splitSheet(ch.at)[1])) fail(`Bad anchor "${ch.at}"`);
 }
 /** addChart: { sheet?, type, range|table(+x,y[])|value(kpi), title?, at: "K2", w?, h? } */
@@ -710,7 +713,7 @@ function opAddChart(st, op) {
   const ch = { id };
   for (const k of CHART_KEYS) if (op[k] !== undefined && op[k] !== null) ch[k] = clone(op[k]);
   if (typeof ch.range === 'string' && ch.range.startsWith('@')) { ch.table = ch.range.slice(1); delete ch.range; }
-  ch.at ||= 'H2'; ch.w ||= ch.type === 'kpi' ? 220 : 440; ch.h ||= ch.type === 'kpi' ? 120 : 260; ch.dx ||= 0; ch.dy ||= 0;
+  ch.at ||= 'H2'; ch.w ||= ch.type === 'kpi' ? 220 : ch.type === 'viz' ? 180 : 440; ch.h ||= ch.type === 'kpi' ? 120 : ch.type === 'viz' ? 180 : 260; ch.dx ||= 0; ch.dy ||= 0;
   if (typeof ch.y === 'string') ch.y = ch.y.split(',').map((x) => x.trim());
   checkChart(ch);
   (sh.charts ||= []).push(ch);
@@ -738,6 +741,13 @@ function opDeleteChart(st, op) {
 export function chartData(st, sheetName, ch, en = new Engine(st)) {
   const sh = findSheet(st, sheetName);
   const num = (v) => (typeof v === 'number' ? v : typeof v === 'boolean' ? +v : typeof v === 'string' && v.trim() !== '' && !isNaN(+v.replace(',', '.')) ? +v.replace(',', '.') : null);
+  if (ch.type === 'viz') {
+    const [sn, a] = splitSheet(ch.value);
+    const s2 = findSheet(st, sn ?? sh.name), p = parseAddr(a);
+    let v = p ? en.value(s2, p.c, p.r) : null;
+    if (v && typeof v === 'object' && 'pack' in v) v = v.value;   // a =VIZ() cell: show its value
+    return { viz: { pack: ch.pack, value: v, text: fmtValue(v), label: ch.label || ch.title || '' } };
+  }
   if (ch.type === 'kpi') {
     const [sn, a] = splitSheet(ch.value);
     const s2 = findSheet(st, sn ?? sh.name);

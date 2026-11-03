@@ -8,6 +8,7 @@ import { Store, httpErr } from './lib/store.js';
 import { TYPES } from './public/shared/types/index.js';
 import { splitSheet } from './public/shared/a1.js';
 import { exportSheet } from './public/shared/export.js';
+import { validatePack } from './public/shared/viz.js';
 import { runSql, tableJson, jsonToOps, formatResult } from './lib/sql.js';
 import { formatEntries, netChanges, formatRead, formatDiff, formatChangeList, formatHistory } from './lib/format.js';
 
@@ -32,7 +33,28 @@ export function createServer(store) {
   });
   const wantText = (u) => (u.searchParams.get('format') || 'text') === 'text';
 
+  if (!store.viz) store.loadViz(path.join(PUBLIC, 'viz'));
   const routes = {
+    // ---------------------------------------------------------- SVG visual packs (spread-viz/1)
+    'GET /api/viz/spec': (req, res) => send(res, 200, fs.readFileSync(path.join(ROOT, 'VIZ_SPEC.md'), 'utf8'), MIME['.md']),
+    'GET /api/viz': (req, res, u) => {
+      const id = u.searchParams.get('id');
+      const list = [...store.viz.values()];
+      if (id) { const p = store.viz.get(id); if (!p) throw httpErr(404, `No pack "${id}"`); return send(res, 200, p); }
+      if (u.searchParams.get('format') === 'text') return send(res, 200, list.map((p) => `${p.id.padEnd(14)} ${p.kind.padEnd(7)} ${p.name}${p.kind === 'states' ? ' [' + p.states.map((x) => x.id).join(' ') + ']' : p.kind === 'range' ? ` [${p.min}…${p.max}]` : ''}${p.builtin ? '  (built in)' : `  rev ${p.rev}`}`).join('\n'));
+      send(res, 200, list);
+    },
+    'POST /api/viz': async (req, res, u) => {
+      const b = await body(req);
+      const pack = b.pack || b;
+      if (u.searchParams.has('dry')) {
+        const r = validatePack(pack);
+        return send(res, r.ok ? 200 : 400, { ok: r.ok, errors: r.errors, warnings: r.warnings, ...(r.ok ? {} : { error: 'Invalid pack: ' + r.errors.join('; ') }) });
+      }
+      const r = store.putViz(pack, b.by || u.searchParams.get('by') || 'agent');
+      send(res, 200, { ok: true, id: r.pack.id, rev: r.pack.rev, replaced: r.replaced, warnings: r.warnings });
+    },
+    'DELETE /api/viz': (req, res, u) => { store.deleteViz(u.searchParams.get('id'), u.searchParams.get('by') || 'user'); send(res, 200, { ok: true }); },
     'GET /api/help': (req, res) => send(res, 200, fs.readFileSync(path.join(ROOT, 'AGENT_SKILL.md'), 'utf8'), MIME['.md']),
 
     'GET /api/workspace': (req, res) => send(res, 200, {

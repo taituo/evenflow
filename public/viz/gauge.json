@@ -1,0 +1,10 @@
+{
+  "spec": "spread-viz/1",
+  "id": "gauge",
+  "kind": "range",
+  "name": "Gauge",
+  "min": 0,
+  "max": 100,
+  "description": "A 270° gauge with a needle; turns amber at 60 %, red at 80 %.",
+  "svg": "<svg viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">\n<style>\n.bg{fill:none;stroke:rgba(127,127,160,.28);stroke-width:9;stroke-linecap:round}\n.val{fill:none;stroke:#34c759;stroke-width:9;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc((1 - var(--v)) * 100)}\n[data-level=\"6\"] .val,[data-level=\"7\"] .val{stroke:#f9ab00}\n[data-level=\"8\"] .val,[data-level=\"9\"] .val,[data-level=\"10\"] .val{stroke:#ea4335}\n.needle{transform-origin:50px 58px;transform:rotate(calc(var(--v) * 270deg - 135deg))}\n.num{font:700 17px system-ui,sans-serif;fill:currentColor;text-anchor:middle}\n</style>\n<path class=\"bg\" d=\"M23.13 84.87A38 38 0 1 1 76.87 84.87\" pathLength=\"100\"/>\n<path class=\"val\" d=\"M23.13 84.87A38 38 0 1 1 76.87 84.87\" pathLength=\"100\"/>\n<g class=\"needle\"><line x1=\"50\" y1=\"58\" x2=\"50\" y2=\"28\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\"/></g>\n<circle cx=\"50\" cy=\"58\" r=\"5\" fill=\"currentColor\"/>\n<text class=\"num\" x=\"50\" y=\"92\">{{value}}</text>\n</svg>"
+}

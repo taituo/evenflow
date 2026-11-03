@@ -11,8 +11,8 @@ Zero dependencies. Node 22.13+ and a browser. Works headless.
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 35 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
-npm run e2e        # 23 browser tests (Playwright): two users, Live, slides, traffic lights, effects, table tools, remote, phone, XSS
+npm test           # 41 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
+npm run e2e        # 26 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, table tools, remote, phone, XSS
 ```
 
 ![The grid](docs/grid.jpg)
@@ -25,6 +25,7 @@ npm run e2e        # 23 browser tests (Playwright): two users, Live, slides, tra
 - [The grid](#the-grid)
 - [Named tables](#named-tables-structured-data)
 - [Traffic lights](#traffic-lights)
+- [SVG visuals](#svg-visuals)
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
 - [Live mode](#live-mode)
@@ -91,6 +92,27 @@ Color cells by their value — 🚦 in the toolbar or right-click → *Traffic l
 
 ![Traffic-light editor](docs/traffic-editor.jpg)
 ![Traffic lights in Live: a red status light on a KPI, lit status cells](docs/live-traffic.jpg)
+
+## SVG visuals
+
+Show a value as a picture: a lamp, a switch, a gauge, a battery, a progress ring, a traffic light, a status icon,
+the weather — or anything a model draws for you. 🎨 in the toolbar.
+
+- **Three kinds, one standard** — [`spread-viz/1`](VIZ_SPEC.md): `toggle` (on/off), `range` (0–100, or any
+  min–max) and `states` (2–12 named pictures picked by rules like the traffic lights'). A pack is one JSON file with
+  SVG inside: CSS variables (`--v`, `--pct`), `data-state` / `data-level` and `{{value}}` placeholders do the rest.
+- **Anywhere**: `=VIZ("status", C7)` in a cell (the cell keeps its value for sorting, formulas and SQL; put it in a
+  table column for a status column), or a visual card (🎨 → *Card*, `cm viz card gauge Budget!D6 --at K2`).
+- **In Live** numbers glide (the needle turns, the battery fills), states cross-fade, and the card can be a small tile.
+- **Made by models**: 🎨 → *Copy a prompt for a model* gives any LLM the spec; paste its JSON back in (code
+  fences are fine). Every problem is listed — no viewBox, a `<script>`, an external link — so the model can fix it.
+  Agents: `cm viz spec`, `cm viz check pack.json`, `cm viz add pack.json`.
+- **Safe by construction**: packs are checked on install and *sanitized again when drawn* (allowlist of SVG elements
+  and attributes, no scripts, events, foreign objects, external URLs or `@import`). Each visual lives in its own
+  shadow root, so a pack's styles can't touch the page; the grid draws them as images.
+
+![SVG visuals in Live: a lamp, a gauge, the weather, traffic lights in a table column](docs/live-visuals.jpg)
+<img src="docs/visuals-picker.jpg" width="480" alt="The visuals picker">
 
 ## SQL and JSON
 
@@ -366,6 +388,7 @@ Text responses by default; add `format=json` for JSON.
 | `GET /api/selection` · `POST /api/focus` | the user's selection · highlight where the agent works |
 | `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, screen}`) / read what a screen shows |
 | `GET /api/screens` | open Live views (TVs, laptops) and what they show |
+| `GET /api/viz` · `GET /api/viz/spec` · `POST /api/viz[?dry=1]` · `DELETE /api/viz?id=` | SVG visual packs: list, the spec, validate / install, remove |
 | `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history of a cell (move-aware) or a table |
 | `GET /api/presence` · `POST /api/presence` | who is here, where, and in Live |
 | `GET /api/events` | SSE stream of every change and presence update |
