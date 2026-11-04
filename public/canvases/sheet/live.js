@@ -1040,7 +1040,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         if (gone.length && !n.leaving && !n.vaporDone) {
           // removed records evaporate first; the table re-forms when they're gone
           n.leaving = true;
-          vaporRowsOut(gone, () => { n.leaving = false; n.vaporDone = true; render(); });
+          vaporRowsOut(gone, () => { n.leaving = false; n.vaporDone = true; n.sig = null; render(); });   // then re-form, whatever else changed meanwhile
           return;
         }
         if (n.leaving) return;

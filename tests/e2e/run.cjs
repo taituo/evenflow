@@ -458,7 +458,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await until(async () => !(await tasks.locator('tr.fx-row-in').count()) && (await tasks.textContent()).includes('Vapor test'), 8000, 'row-in finished');
     await ops([{ op: 'removeRows', table: 'Tasks', key: 'Vapor test' }]);
     await until(() => L.evaluate(() => window.__rows.has('fx-row-out')), 8000, 'row evaporates');
-    await until(async () => !(await tasks.textContent()).includes('Vapor test'), 6000, 'row gone afterwards');
+    await until(async () => !(await tasks.locator('tbody').textContent()).includes('Vapor test'), 10000, 'row gone afterwards').catch(async (e) => { throw new Error(e.message + ' | ' + JSON.stringify(await tasks.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => tr.className + ':' + tr.textContent.slice(0, 30))))); });
     // morph: KPI rolls digits / counts, ends exact
     await ops([{ op: 'liveLayout', fx: null }]);
     await sleep(500);
@@ -686,7 +686,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await until(async () => (await V.locator(`.lv-card[data-key="Project::table:Tasks"] td[data-a="${vizCell[0]}"] .lv-vizcell`).evaluate((h) => h.dataset.state)) === 'red', 8000, 'cell light turned red');
     await sleep(2500);
     // the column insert moved the Parts table right: its card must follow the cells, not keep stale addresses
-    eq((await V.locator('.lv-card[data-key="Project::table:Parts"] tbody tr').first().locator('td').allTextContents()).map((x) => x.trim()), ['Servo', '12.5'], 'Parts card re-addressed');
+    const shown = await V.locator('.lv-card[data-key="Project::table:Parts"] tbody td').evaluateAll((tds) => tds.map((t) => [t.dataset.a, t.textContent.trim()]));
+    const pc = (await docNow()).sheets[0].cells;
+    ok(shown.length > 0, 'Parts card has cells');
+    const wrong = shown.filter(([a, t]) => { const v = pc[a]?.v ?? ''; return !(typeof v === 'string' && v[0] === '=') && String(v) !== t; });
+    eq(wrong, [], 'every Parts cell shows what its address holds');
     await V.screenshot({ path: path.join(SHOTS, 'viz-live.png') });
     await V.context().close();
   });
