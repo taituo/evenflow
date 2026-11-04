@@ -10,6 +10,16 @@ const STYLES = {
   bright: 'https://tiles.openfreemap.org/styles/liberty',
 };
 const BLANK = { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': 'rgba(0,0,0,0)' } }] };
+const raster = (tiles, attribution, maxzoom) => ({ version: 8, sources: { base: { type: 'raster', tiles: [tiles], tileSize: 256, maxzoom, attribution } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] });
+const NLS = '© <a href="https://www.maanmittauslaitos.fi/en/opendata-licence-cc40">Maanmittauslaitos</a> (CC BY 4.0)';
+// imagery and Finnish maps are raster tiles; the NLS ones come through the server (it holds the API key and caches)
+const RASTER = {
+  satellite: () => raster('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/{z}/{y}/{x}.jpg', '<a href="https://s2maps.eu">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2023)', 14),
+  aerial: () => raster(location.origin + '/tiles/nls/ortokuva/{z}/{x}/{y}', NLS, 16),
+  topo: () => raster(location.origin + '/tiles/nls/maastokartta/{z}/{x}/{y}', NLS, 16),
+  fi: () => raster(location.origin + '/tiles/nls/taustakartta/{z}/{x}/{y}', NLS, 16),
+};
+const NLS_BASES = ['aerial', 'topo', 'fi'];
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 let lib = null;
@@ -29,7 +39,7 @@ export function loadMapLib() {
 
 /** Mount a map in `host`. Returns { update(data, {focused}), resize(), destroy(), state() }. */
 export function mountMap(host, { onMove } = {}) {
-  let map = null, gl = null, data = null, opts = {}, base = null, offline = false, dead = false;
+  let map = null, gl = null, data = null, opts = {}, base = null, offline = false, offlineWhy = '', dead = false;
   const pins = new Map();         // key -> { m: Marker, el, p, from, to, t0, trail: [[lon,lat]] }
   let lastView = null, lastKeys = '', fitted = false, localFocus = null;
   const note = document.createElement('div');
@@ -51,9 +61,11 @@ export function mountMap(host, { onMove } = {}) {
     map.on('style.load', () => { addLayers(); paint(); });
     map.on('error', (e) => {
       // style or tiles unreachable (offline, blocked): keep the points, drop the basemap
-      if (!offline && base !== 'none' && /style|Failed to fetch|NetworkError|AJAXError/i.test(String(e?.error?.message || e?.error || ''))) {
+      const msg = String(e?.error?.message || e?.error || '');
+      if (!offline && base !== 'none' && /style|Failed to fetch|NetworkError|AJAXError/i.test(msg)) {
         offline = true;
-        note.textContent = 'map offline — points only';
+        offlineWhy = NLS_BASES.includes(base) && /503|Service Unavailable/i.test(msg) ? 'Finnish maps need an NLS key — cm config nls-key KEY' : 'map offline — points only';
+        note.textContent = offlineWhy;
         map.setStyle(BLANK);
       }
     });
@@ -62,7 +74,7 @@ export function mountMap(host, { onMove } = {}) {
     if (data) apply();
   }).catch((e) => { note.textContent = e.message; });
 
-  function styleFor(b) { return b === 'none' || offline ? BLANK : STYLES[b] || STYLES.dark; }
+  function styleFor(b) { return b === 'none' || offline ? BLANK : RASTER[b] ? RASTER[b]() : STYLES[b] || STYLES.dark; }
   function addLayers() {
     if (!map.getSource('sp-routes')) map.addSource('sp-routes', { type: 'geojson', data: fc([]) });
     if (!map.getSource('sp-trails')) map.addSource('sp-trails', { type: 'geojson', data: fc([]) });
@@ -80,9 +92,9 @@ export function mountMap(host, { onMove } = {}) {
   function apply() {
     if (opts.focused) map.scrollZoom.enable(); else map.scrollZoom.disable();
     const want = data.basemap || 'dark';
-    if (want !== base) { base = want; if (!offline || want === 'none') map.setStyle(styleFor(want)); }
+    if (want !== base) { base = want; offline = false; map.setStyle(styleFor(want)); }   // a new basemap gets a fresh chance
     const err = data.layers.find((L) => L.error);
-    note.textContent = err ? err.error : offline ? 'map offline — points only' : '';
+    note.textContent = err ? err.error : offline ? offlineWhy : '';
     const pts = visiblePoints();
     const now = performance.now();
     const seen = new Set();

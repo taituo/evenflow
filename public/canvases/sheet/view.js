@@ -605,7 +605,8 @@ export function mount(root, ctx) {
       const title = row('Title', Object.assign(document.createElement('input'), { value: ch.title || '' }));
       const layers = row('Layers', Object.assign(document.createElement('input'), { value: ch.layers.map((L) => L.table + (L.route ? ' +route' : '') + (L.color ? ' color=' + L.color : '')).join(', '), placeholder: 'Places +route, Robots color=Status' }));
       const base = document.createElement('select');
-      for (const b of MAP_BASES) base.add(new Option(b === 'none' ? 'none (points float)' : b, b, false, b === (ch.basemap || 'dark')));
+      const BL = { satellite: 'satellite (Sentinel-2)', aerial: 'aerial photo · Finland (NLS)', topo: 'topographic · Finland (NLS)', fi: 'background map · Finland (NLS)', none: 'none (points float)' };
+      for (const b of MAP_BASES) base.add(new Option(BL[b] || b, b, false, b === (ch.basemap || 'dark')));
       row('Map', base);
       const follow = row('Follow', Object.assign(document.createElement('input'), { value: ch.follow || '', placeholder: 'a point label (camera follows it)' }));
       const hint = document.createElement('div'); hint.style.cssText = 'font-size:11px;color:#5f6368'; hint.textContent = 'Columns lat/lon (or one "coords" column) are found by name. The full map is in ▶ Live.';

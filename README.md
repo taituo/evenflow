@@ -11,7 +11,7 @@ Zero dependencies (two libraries vendored: shaders and maps). Node 22.13+ and a 
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 50 tests: engine, API, CLI, MCP, maps, replay, the demo tour, a 2000-round undo/redo fuzz over every op
+npm test           # 56 tests: engine, API, CLI, MCP, maps, feeds, replay, the demo tour, a 2000-round undo/redo fuzz over every op
 npm run e2e        # 28 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, maps, replay, table tools, remote, phone, XSS
 ```
 
@@ -28,7 +28,7 @@ npm run e2e        # 28 browser tests (Playwright): two users, Live, slides, tra
 - [SVG visuals](#svg-visuals)
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
-- [Live mode](#live-mode) · [Maps](#maps) · [Time replay](#time-replay)
+- [Live mode](#live-mode) · [Maps](#maps) · [Open data from Finland](#open-data-from-finland) · [Time replay](#time-replay)
 - [Slides](#slides)
 - [Multi-user and history](#multi-user-and-history)
 - [Remote control](#remote-control)
@@ -269,10 +269,19 @@ column (`60.17, 24.94`) are found by name. Each table is a layer; a layer can jo
 them from a column (traffic lights, `#hex`, or one color per value) and draw an SVG visual at each point
 (`=VIZ(…)` cells, or `pack` + `value`).
 
-In Live the map is a real vector map (MapLibre GL, vendored; OpenFreeMap tiles, no key): points **glide** when their
-coordinates change and leave a fading trail, a click shows the point's row. Basemaps: `dark`, `light`, `bright`, or
-`none` — the points float on the Live background (and that is also the offline fallback). In the grid the map is a
-sketch of the same points. The agent steers the camera:
+In Live the map is a real map (MapLibre GL, vendored): points **glide** when their coordinates change and leave a
+fading trail, a click shows the point's row. In the grid the map is a sketch of the same points. Basemaps:
+
+| `basemap` | | key? |
+|---|---|---|
+| `dark` (default) · `light` · `bright` | OpenFreeMap vector maps, OpenStreetMap data | no |
+| `satellite` | Sentinel-2 cloudless 2023 imagery by EOX (10 m; CC BY-NC-SA 4.0) | no |
+| `aerial` · `topo` · `fi` | Finland: orthophoto, topographic map, background map — National Land Survey (NLS), CC BY 4.0 | free NLS key |
+| `none` | no basemap: the points float on the Live background (also the offline fallback) | — |
+
+The Finnish maps go through Spread's server, which keeps the key and caches every tile:
+`cm config nls-key YOUR_KEY` (get one free: [NLS API key](https://www.maanmittauslaitos.fi/en/rajapinnat/api-avaimen-ohje)).
+The agent steers the camera:
 
 ```bash
 cm map fly 60.17 24.94 --zoom 14 --pitch 45   # or: fly "Kamppi" · fly fit
@@ -282,6 +291,28 @@ cm map layer Parts --route · cm map layer Parts off · cm map basemap none
 ```
 
 ![A map card in Live: a route, a focused point with its row](docs/live-map.jpg)
+
+### Open data from Finland
+
+Real-time public data polled straight into named tables — so it shows in the grid, on maps and in Live, the agent
+reads it in its change feed, and every poll is a version you can **replay**:
+
+| feed | source | table |
+|---|---|---|
+| `trains` | every running train in Finland, ~15 s (Fintraffic Digitraffic) | Train · Lat · Lon · Speed · Updated |
+| `ships` | AIS vessel positions in an area, default off Helsinki (Digitraffic) | Ship · MMSI · Lat · Lon · Speed · Course · Updated |
+| `roadweather` | road weather stations: air / road temperature, wind (Digitraffic) | Station · Lat · Lon · Air · Road · Wind |
+| `weather` | latest observations by place (Finnish Meteorological Institute) | Place · Lat · Lon · Temp · Wind · Humidity · Updated |
+
+```bash
+cm feed add trains --map                 # table + map card; polls every 30 s
+cm feed add ships --map --bbox 22,59.8,23.5,60.5 --every 60
+cm feed add weather --places Helsinki,Tampere,Oulu
+cm feed ls · cm feed run trains · cm feed pause trains · cm feed rm trains   (the table stays)
+```
+
+Each poll updates changed records, adds new ones and removes those that are gone (`--keep` keeps them). No keys
+needed; all CC BY 4.0 — credit Fintraffic / digitraffic.fi and the Finnish Meteorological Institute.
 
 ### Time replay
 
@@ -396,11 +427,11 @@ claude mcp add spread -- node /path/to/spread/bin/mcp.mjs
 
 Tools: `spread_help`, `spread_overview`, `spread_changes` (keeps its own cursor, own edits filtered out),
 `spread_read`, `spread_ops`, `spread_sql`, `spread_history`, `spread_live`, `spread_screens`, `spread_present`,
-`spread_map`, `spread_replay`, `spread_viz`, `spread_demo`.
+`spread_map`, `spread_replay`, `spread_feed`, `spread_viz`, `spread_demo`.
 
 ## Guided demo
 
-A 23-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
+A 24-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
 
 ```bash
 cm demo               # Enter = next step, b = back, r = repeat, 7 = jump, q = quit
@@ -471,6 +502,8 @@ Text responses by default; add `format=json` for JSON.
 | `POST /api/commit` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore` | milestones |
 | `GET /api/selection` · `POST /api/focus` | the user's selection · highlight where the agent works |
 | `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, replay: {from, to?, speed?, loop?, gaps?} \| "stop", screen}`) / read what a screen shows |
+| `GET /api/feeds[?kinds]` · `POST /api/feeds` · `POST /api/feeds/run` · `POST /api/feeds/set` · `DELETE /api/feeds?id=` | open data feeds into tables |
+| `GET /api/config` · `POST /api/config` · `GET /tiles/nls/<layer>/<z>/<x>/<y>` | server settings (NLS key) · cached Finnish map tiles |
 | `GET /api/replay?from=&to=` | the doc as it was at `from` and every batch up to `to` (text summary, or `format=json`) |
 | `GET /api/screens` | open Live views (TVs, laptops) and what they show |
 | `GET /api/viz` · `GET /api/viz/spec` · `POST /api/viz[?dry=1]` · `DELETE /api/viz?id=` | SVG visual packs: list, the spec, validate / install, remove |
@@ -496,7 +529,9 @@ Background shaders: [Paper Shaders](https://github.com/paper-design/shaders) by 
 
 Maps: [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), BSD-3-Clause (vendored unmodified, loaded only when a
 map is shown; see `public/vendor/maplibre/`). Tiles from [OpenFreeMap](https://openfreemap.org), map data ©
-[OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (shown on every map).
+[OpenStreetMap](https://www.openstreetmap.org/copyright) contributors; imagery: Sentinel-2 cloudless by EOX (contains
+modified Copernicus Sentinel data); Finnish maps © Maanmittauslaitos (CC BY 4.0). Feeds: Fintraffic / digitraffic.fi and
+the Finnish Meteorological Institute, CC BY 4.0. Attribution is shown on every map.
 
 ## License
 

@@ -54,7 +54,7 @@ test('map validation explains itself; camera fields are undoable', () => {
   bad({ layers: [{ table: 'Nope' }] }, /No table "Nope"/);
   bad({ layers: [{ table: 'Robots', colour: 'x' }] }, /unknown key "colour"/);
   bad({ layers: ['Robots', 'Robots'] }, /same name/);
-  bad({ layers: ['Robots'], basemap: 'satellite' }, /dark \| light \| bright \| none/);
+  bad({ layers: ['Robots'], basemap: 'google' }, /dark \| light \| bright \| satellite/);
   bad({ layers: ['Robots'], view: { lat: 60 } }, /both lat and lon/);
   bad({ layers: ['Robots'], view: { lat: 95, lon: 1 } }, /view.lat/);
   S.apply(st, { op: 'addChart', id: 'm', type: 'map', layers: ['Robots'], at: 'J2' });

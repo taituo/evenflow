@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, httpErr } from './lib/store.js';
+import { nlsTile, nlsKey } from './lib/tiles.js';
+import { Feeds, describeKinds } from './lib/feeds.js';
 import { TYPES } from './public/shared/types/index.js';
 import { splitSheet } from './public/shared/a1.js';
 import { exportSheet } from './public/shared/export.js';
@@ -33,6 +35,7 @@ export function parseWhen(x, store) {
 }
 
 export function createServer(store) {
+  if (!store.feeds) store.feeds = new Feeds(store).start();   // open-data feeds poll into tables
   const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
 
   const send = (res, status, body, type) => {
@@ -218,6 +221,27 @@ export function createServer(store) {
       store.selection = { doc: b.doc, sheet: b.sheet, ranges: b.ranges || [], active: b.active, ts: Date.now() };
       send(res, 200, { ok: true });
     },
+    // open data feeds (Finnish real-time sources → tables)
+    'GET /api/feeds': (req, res, u) => {
+      if (u.searchParams.has('kinds')) return send(res, 200, describeKinds());
+      if (u.searchParams.get('format') === 'json') return send(res, 200, store.feeds.list().map((f) => ({ ...f, status: store.feeds.status.get(f.id) || null })));
+      send(res, 200, store.feeds.describe());
+    },
+    'POST /api/feeds': async (req, res) => send(res, 200, await store.feeds.add(await body(req)).catch((e) => { throw httpErr(e.status || 400, e.message); })),
+    'POST /api/feeds/run': async (req, res) => { const b = await body(req); try { send(res, 200, await store.feeds.run(b.id)); } catch (e) { throw httpErr(e.status || 400, e.message); } },
+    'POST /api/feeds/set': async (req, res) => { const b = await body(req); try { send(res, 200, store.feeds.setOn(b.id, b.on !== false)); } catch (e) { throw httpErr(e.status || 400, e.message); } },
+    'DELETE /api/feeds': (req, res, u) => { try { store.feeds.remove(u.searchParams.get('id')); } catch (e) { throw httpErr(e.status || 400, e.message); } send(res, 200, { ok: true }); },
+    // server settings: API keys for map tiles (kept out of the versioned workbook)
+    'GET /api/config': (req, res, u) => {
+      const k = nlsKey(store);
+      const c = { nlsKey: k ? k.slice(0, 4) + '…' : null };
+      u.searchParams.get('format') === 'json' ? send(res, 200, c) : send(res, 200, `nls-key: ${c.nlsKey || '(not set — Finnish aerial / topo maps need one: https://www.maanmittauslaitos.fi/en/rajapinnat/api-avaimen-ohje)'}`);
+    },
+    'POST /api/config': async (req, res) => {
+      const b = await body(req);
+      if ('nlsKey' in b) { if (b.nlsKey != null && !/^[\w-]{8,100}$/.test(String(b.nlsKey))) throw httpErr(400, 'nlsKey looks wrong'); store.saveSettings({ nlsKey: b.nlsKey || null }); }
+      send(res, 200, { ok: true });
+    },
     'GET /api/replay': (req, res, u) => {
       const q = u.searchParams;
       const r = store.replay({ doc: q.get('doc') || undefined, from: parseWhen(q.get('from'), store), to: q.get('to') ? parseWhen(q.get('to'), store) : undefined });
@@ -312,6 +336,12 @@ export function createServer(store) {
       const h = routes[`${req.method} ${u.pathname}`];
       if (h) return await h(req, res, u);
       if (u.pathname.startsWith('/api/')) throw httpErr(404, `No route ${req.method} ${u.pathname}. See GET /api/help`);
+      if (u.pathname.startsWith('/tiles/nls/') && req.method === 'GET') {
+        const [layer, z, x, y] = u.pathname.slice(11).split('/');
+        const t = await nlsTile(store, layer, z, x, y);
+        res.writeHead(200, { 'content-type': t.type, 'cache-control': 'public, max-age=86400', 'x-cache': t.cached ? 'hit' : 'miss' });
+        return res.end(t.body);
+      }
       if (u.pathname.startsWith('/assets/')) {
         const f = path.join(store.dir, 'assets', path.basename(u.pathname));
         if (!fs.existsSync(f)) throw httpErr(404, 'No such asset');

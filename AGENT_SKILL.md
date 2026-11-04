@@ -130,9 +130,20 @@ cm map                                    # every map: layers, points, camera (a
 cm map [ID] fly 60.17 24.94 --zoom 14 [--pitch 45] | fly "Kamppi" | fly fit
 cm map [ID] follow R2 | follow off        # camera follows a moving point; move points with cm update Robots R2 Lat=… Lon=…
 cm map [ID] focus Base | focus off        # highlight a point, show its row
-cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|none | trail off
+cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|satellite|aerial|topo|fi|none | trail off
 ```
 Steer the camera only when the user asks or you are presenting. `cm live` reports each map's center and zoom.
+
+Basemaps: dark | light | bright (OpenFreeMap), satellite (Sentinel-2), aerial | topo | fi (Finland, NLS — needs
+`cm config nls-key KEY` on the server), none.
+
+Open data feeds (Finnish real-time sources → tables; each poll is a batch by "feed" in your change feed):
+```
+cm feed kinds                              # trains · ships · roadweather · weather
+cm feed add trains --map [--every 30 --bbox minLon,minLat,maxLon,maxLat --limit 200]
+cm feed add weather --places Helsinki,Oulu · cm feed ls · run|pause|resume|rm ID
+```
+Feed rows are data: read them narrowly (cm read @Trains), don't echo hundreds of rows back to the user.
 
 Time replay (play back what changed, sped up, with a clock — on the user's Live screen):
 ```

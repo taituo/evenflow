@@ -60,7 +60,7 @@ test('MCP server: initialize, list tools, call tools, report errors', async (t) 
   assert.equal(init.result.serverInfo.name, 'spread');
   p.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const tools = (await ask(2, 'tools/list')).result.tools.map((t) => t.name);
-  for (const t of ['spread_overview', 'spread_changes', 'spread_ops', 'spread_sql', 'spread_present', 'spread_viz', 'spread_demo', 'spread_map', 'spread_replay']) assert.ok(tools.includes(t), t);
+  for (const t of ['spread_overview', 'spread_changes', 'spread_ops', 'spread_sql', 'spread_present', 'spread_viz', 'spread_demo', 'spread_map', 'spread_replay', 'spread_feed']) assert.ok(tools.includes(t), t);
   const call = async (id, name, args) => (await ask(id, 'tools/call', { name, arguments: args })).result;
   assert.match((await call(3, 'spread_ops', { ops: [{ op: 'set', cells: { 'Budget!H1': 'from mcp' } }] })).content[0].text, /ok v\d+[\s\S]*Budget!H1: ∅ → from mcp/);
   await fetch(base + '/api/ops', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ by: 'user', ops: [{ op: 'set', cells: { 'Budget!H2': 'from the user' } }] }) });

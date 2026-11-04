@@ -714,7 +714,7 @@ function opSetConds(st, op) {
 // ------------------------------------------------------------------ charts (floating, live)
 export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz', 'map'];
 const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors', 'layers', 'view', 'basemap', 'follow', 'focus', 'trail'];
-export const MAP_BASES = ['dark', 'light', 'bright', 'none'];
+export const MAP_BASES = ['dark', 'light', 'bright', 'satellite', 'aerial', 'topo', 'fi', 'none'];
 const LAYER_KEYS = ['table', 'name', 'lat', 'lon', 'label', 'color', 'pack', 'value', 'route', 'hidden'];
 function checkMap(ch) {
   if (!Array.isArray(ch.layers) || !ch.layers.length) fail('map needs layers: [{"table":"Places"}] (a named table with lat/lon columns)');

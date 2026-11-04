@@ -106,6 +106,17 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | Click a point → its row; the agent focuses a point | `cm map focus Base` | 18 |
 | ☐ | The agent flies the camera, follows a moving point, fits to all points | `cm map fly …`, `follow`, `fly fit` | 18 |
 | ☐ | Offline: the basemap drops out, the points stay | disconnect the network | |
+| ☐ | Satellite imagery (Sentinel-2) and Finnish aerial / topo / background maps (NLS, through a caching proxy) | map editor → Map; `cm config nls-key KEY` | |
+
+## Open data from Finland
+
+| ✓ | Feature | Try it | Demo |
+|---|---|---|---|
+| ☐ | Trains: every running train, table + map, moves every poll | `cm feed add trains --map` | 23 |
+| ☐ | Ships (AIS) in an area | `cm feed add ships --map` | |
+| ☐ | Road weather stations; FMI weather by place | `cm feed add roadweather --map` · `cm feed add weather --places Helsinki,Oulu` | |
+| ☐ | Polls are versioned batches by “feed”: change feed, history, replay | `cm replay --from -10m` | |
+| ☐ | Pause / resume / run now / remove (the table stays); `--keep` keeps vanished rows | `cm feed ls` | |
 
 ## Time replay
 
@@ -134,6 +145,6 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 |---|---|---|---|
 | ☐ | REST API (text by default, `format=json`) | `curl :3210/api/overview` | all |
 | ☐ | CLI `cm` (overview, changes, read, set, tables, SQL, charts, lights, visuals, Live, slides, screens, history) | `node bin/cm.mjs help` | all |
-| ☐ | MCP server (`bin/mcp.mjs`): 14 tools incl. maps, replay and the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
+| ☐ | MCP server (`bin/mcp.mjs`): 15 tools incl. maps, feeds, replay and the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
 | ☐ | Change feed: only what changed, moves as one line, recalculated values | `cm changes` | 3 |
 | ☐ | The agent reads the screen (`cm live`) | | 11 |

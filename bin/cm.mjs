@@ -77,9 +77,11 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm style chart:status card=clear · cm style Tasks lines=grid · cm style Tasks reset   per card (keys from cm live)
   cm map add Places [--lat Lat --lon Lon --label Name --color Status --pack status --value Status --route] [--at K2 --title …]
   cm map [ID] fly 60.17 24.94 [--zoom 13 --pitch 45] | fly "Kamppi" | fly fit | follow Robot1|off | focus Kamppi|off
-  cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|none | trail off   ·  cm map (list)
+  cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|satellite|aerial|topo|fi|none | trail off   ·  cm map (list)
   cm replay --from 09:00 [--to 12:00] [--speed 360] [--loop] [--no-gaps] [--screen tv]   play back what changed, with a clock
   cm replay ls --from -2h          what a replay would show ·  cm replay pause|play|next|prev|stop   (from: 14:30, -2h, v120, m3, ISO)
+  cm feed kinds | add trains --map [--every 30 --bbox 24,60,25.5,60.5] | ls | run|pause|resume|rm ID   Finnish open data → tables
+  cm config [nls-key KEY]          server settings (a free NLS key enables the Finnish aerial / topo maps)
   cm screens                       open Live views (TV, laptop…) — target one with --screen id
   cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
   cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
@@ -344,7 +346,7 @@ switch (cmd) {
         break;
       }
       case 'rm': await ops([{ op: 'deleteChart', id }]); break;
-      default: console.error('cm map [ID] fly LAT LON|LABEL|fit [--zoom 12 --pitch 45 --bearing 0] · zoom Z · follow LABEL|off · focus LABEL|off · layer TABLE [on|off|rm|--route --color Col …] · route TABLE on|off · basemap dark|light|bright|none · trail on|off · rm'); process.exit(2);
+      default: console.error('cm map [ID] fly LAT LON|LABEL|fit [--zoom 12 --pitch 45 --bearing 0] · zoom Z · follow LABEL|off · focus LABEL|off · layer TABLE [on|off|rm|--route --color Col …] · route TABLE on|off · basemap dark|light|bright|satellite|aerial|topo|fi|none · trail on|off · rm'); process.exit(2);
     }
     break;
   }
@@ -360,6 +362,34 @@ switch (cmd) {
     if (['pause', 'play', 'toggle', 'next', 'prev'].includes(sub)) { await call('POST', '/api/present', { doc: DOC || undefined, action: sub, screen, by: BY }); out('ok'); break; }
     await call('POST', '/api/present', { doc: DOC || undefined, sheet, mode: combined ? 'auto' : undefined, screen, by: BY, replay: { from: when(from ?? sub ?? '-1h'), to: to && when(to), speed: speed ? +speed : undefined, gaps, loop } });
     out('ok — replaying on the Live screen (cm live shows where it is; cm replay stop)');
+    break;
+  }
+  case 'feed': case 'feeds': {
+    // open data → tables: cm feed kinds · cm feed add trains [--map --every 30 --bbox 24,60,25.5,60.5 --places Helsinki,Oulu --limit 100 --sheet S --at A1 --keep] · cm feed run|pause|resume|rm ID
+    const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; const has = v !== undefined && !v.startsWith('--'); args.splice(i, has ? 2 : 1); return has ? v : true; };
+    const sub = args[0];
+    if (!sub || sub === 'ls') { out(await call('GET', '/api/feeds')); break; }
+    if (sub === 'kinds') { out(await call('GET', '/api/feeds?kinds')); break; }
+    if (sub === 'add') {
+      const o = { kind: args[1], id: flag('id'), every: flag('every'), table: flag('table'), sheet: flag('sheet'), at: flag('at'), limit: flag('limit'), map: !!flag('map'), keep: !!flag('keep'), doc: DOC || undefined };
+      const bb = flag('bbox'), pl = flag('places');
+      if (bb) o.bbox = String(bb).split(',').map(Number);
+      if (pl) o.places = String(pl).split(',').map((x) => x.trim());
+      const r = JSON.parse(await call('POST', '/api/feeds', o));
+      const s2 = r.status;
+      out(s2.ok ? `ok — feed ${r.id}: ${s2.rows} rows into ${r.table}${s2.created ? ' (new table' + (r.map ? ' + map' : '') + ')' : ''}, every ${r.every}s` : `feed ${r.id} added, but the first poll failed: ${s2.error}`);
+      break;
+    }
+    if (sub === 'run') { const r = JSON.parse(await call('POST', '/api/feeds/run', { id: args[1] })); out(r.status.ok ? `ok — ${r.status.rows} rows (+${r.status.added} ~${r.status.updated} -${r.status.removed})` : 'ERROR ' + r.status.error); break; }
+    if (sub === 'pause' || sub === 'resume') { await call('POST', '/api/feeds/set', { id: args[1], on: sub === 'resume' }); out('ok'); break; }
+    if (sub === 'rm') { await call('DELETE', '/api/feeds?' + qs({ id: args[1] })); out('ok (the table stays)'); break; }
+    out('cm feed [ls] | kinds | add KIND [--map …] | run ID | pause ID | resume ID | rm ID');
+    break;
+  }
+  case 'config': {
+    // server settings: cm config · cm config nls-key KEY (Finnish aerial / topo maps) · cm config nls-key off
+    if (args[0] === 'nls-key') { await call('POST', '/api/config', { nlsKey: args[1] === 'off' ? null : args[1] }); out('ok'); break; }
+    out(await call('GET', '/api/config'));
     break;
   }
   case 'style': {
