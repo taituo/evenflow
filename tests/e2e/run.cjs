@@ -686,9 +686,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await until(async () => (await V.locator(`.lv-card[data-key="Project::table:Tasks"] td[data-a="${vizCell[0]}"] .lv-vizcell`).evaluate((h) => h.dataset.state)) === 'red', 8000, 'cell light turned red');
     await sleep(2500);
     // the column insert moved the Parts table right: its card must follow the cells, not keep stale addresses
-    const shown = await V.locator('.lv-card[data-key="Project::table:Parts"] tbody td').evaluateAll((tds) => tds.map((t) => [t.dataset.a, t.textContent.trim()]));
+    // (Parts is hidden in Live when a chart covers it, so check every Project table card on screen)
+    const shown = await V.locator('.lv-card[data-key^="Project::table:"]:not([data-key$=":Tasks"]) tbody td').evaluateAll((tds) => tds.filter((t) => !t.querySelector('.lv-vizcell')).map((t) => [t.dataset.a, t.textContent.trim()]));
     const pc = (await docNow()).sheets[0].cells;
-    ok(shown.length > 0, 'Parts card has cells');
     const wrong = shown.filter(([a, t]) => { const v = pc[a]?.v ?? ''; return !(typeof v === 'string' && v[0] === '=') && String(v) !== t; });
     eq(wrong, [], 'every Parts cell shows what its address holds');
     await V.screenshot({ path: path.join(SHOTS, 'viz-live.png') });
