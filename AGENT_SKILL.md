@@ -115,6 +115,17 @@ cm slot logo --image /assets/logo.png --span 1 --h 160   # reserve space (the us
 cm layout '{"flow":"horizontal"}'         # also: order, spans, hidden, reveal
 cm ops '[{"op":"view","sheet":"Dashboard","theme":"ocean","font":"rounded"}]'
 ```
+Card looks (only when the user asks; the user also cycles them in the bar):
+```
+cm style                                  # current look
+cm style cards glass|outline|clear        # clear = no panel, content floats on the background
+cm style lines rows|grid|none             # table cell lines
+cm style chart:status card=glass lines=grid   # one card (keys as in focus); "cm style KEY reset"
+#   = liveLayout {cards, lines, styles:{key:{card,lines}}}
+```
+Demo: when the user asks for a demo / tour, run `cm demo --list`, then `cm demo --step N` one at a time (MCP:
+spread_demo), telling the user what to look at. It uses its own workbook "demo".
+
 Slides (a presentation made of Live views — build them when the user asks for a deck / a show):
 ```
 cm slides

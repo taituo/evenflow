@@ -1241,16 +1241,23 @@ export function mount(root, ctx) {
   tb.innerHTML = `
     <button class="tb" data-a="undo" title="Undo (Ctrl+Z)">↶</button>
     <button class="tb" data-a="redo" title="Redo (Ctrl+Y)">↷</button>
+    <span class="tbp tbp1">
     <select class="tb" data-a="zoom" title="Zoom (Ctrl+wheel / pinch)">${[50, 75, 90, 100, 125, 150, 200, 300].map((p) => `<option value="${p}">${p}%</option>`).join('')}</select>
     <div class="sep"></div>
     <select class="tb" data-a="ff" title="Font">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join('')}</select>
     <select class="tb" data-a="fs" title="Font size">${[9, 10, 11, 13, 16, 20, 24, 32, 40, 56, 72].map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
     <button class="tb" data-a="b" title="Bold (Ctrl+B)"><b>B</b></button>
     <button class="tb" data-a="i" title="Italic (Ctrl+I)"><i>I</i></button>
-    <button class="tb" data-a="s" title="Strikethrough"><s>S</s></button>
     <button class="tb" data-a="color" title="Text color"><span class="stack"><span>A</span><span class="swatch" style="background:#000"></span></span></button>
     <button class="tb" data-a="fill" title="Fill color"><span class="stack"><span>◧</span><span class="swatch" style="background:#fff2cc"></span></span></button>
     <div class="sep"></div>
+    <button class="tb" data-a="table" title="Make a named table from the selection">▦</button>
+    <button class="tb" data-a="chart" title="Insert chart from selection (or table / KPI from one cell)">📊</button>
+    <button class="tb" data-a="visuals" title="SVG visuals: show a value as a lamp, gauge, battery, status icon… (or install a pack)">🎨</button>
+    <button class="tb" data-a="traffic" title="Traffic lights: color cells by their value (conditional formatting)">🚦</button>
+    </span>
+    <span class="tbp tbp2">
+    <button class="tb" data-a="s" title="Strikethrough"><s>S</s></button>
     <button class="tb" data-a="left" title="Align left">⫷</button>
     <button class="tb" data-a="center" title="Align center">≡</button>
     <button class="tb" data-a="right" title="Align right">⫸</button>
@@ -1258,17 +1265,17 @@ export function mount(root, ctx) {
     <div class="sep"></div>
     <button class="tb" data-a="borders" title="Borders">⊞</button>
     <button class="tb" data-a="merge" title="Merge cells">⧉</button>
-    <button class="tb" data-a="table" title="Make a named table from the selection">▦</button>
-    <button class="tb" data-a="chart" title="Insert chart from selection (or table / KPI from one cell)">📊</button>
-    <button class="tb" data-a="traffic" title="Traffic lights: color cells by their value (conditional formatting)">🚦</button>
-    <button class="tb" data-a="visuals" title="SVG visuals: show a value as a lamp, gauge, battery, status icon… (or install a pack)">🎨</button>
     <div class="sep"></div>
     <button class="tb" data-a="freeze" title="Freeze rows/cols up to the active cell">❄</button>
     <button class="tb" data-a="grid" title="Show / hide gridlines (dashboard look)">#</button>
     <button class="tb" data-a="sum" title="Insert =SUM of selection below">Σ</button>
+    </span>
+    <button class="tb more" data-a="more" title="More tools: alignment, wrap, borders, merge, freeze, gridlines, Σ">⋯</button>
     <div class="sep"></div>
     <button class="tb live" data-a="live" title="Live mode: full-screen real-time view (Esc = back to edit)">▶ Live</button>`;
   ctx.toolbar.append(tb);
+  try { ctx.toolbar.dataset.page = localStorage.getItem('spread.tbPage') === '2' ? '2' : '1'; } catch { ctx.toolbar.dataset.page = '1'; }
+  tb.querySelector('[data-a=more]').textContent = ctx.toolbar.dataset.page === '2' ? '‹' : '⋯';
   const zoomSel = tb.querySelector('[data-a=zoom]');
   zoomSel.value = '100';
   zoomSel.onchange = () => { setZoom(+zoomSel.value / 100); ed.focus(); };
@@ -1315,6 +1322,14 @@ export function mount(root, ctx) {
       case 'sum': return autoSum();
       case 'traffic': return trafficEditor(btn.getBoundingClientRect());
       case 'visuals': return visualsPopover(btn.getBoundingClientRect());
+      case 'more': {
+        // two pages of tools: everyday first, the rest one click away (remembered)
+        const two = ctx.toolbar.dataset.page !== '2';
+        ctx.toolbar.dataset.page = two ? '2' : '1';
+        btn.textContent = two ? '‹' : '⋯';
+        try { localStorage.setItem('spread.tbPage', ctx.toolbar.dataset.page); } catch {}
+        return;
+      }
     }
   }
 

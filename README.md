@@ -32,7 +32,7 @@ npm run e2e        # 26 browser tests (Playwright): two users, Live, slides, tra
 - [Slides](#slides)
 - [Multi-user and history](#multi-user-and-history)
 - [Remote control](#remote-control)
-- [For agents](#for-agents)
+- [For agents](#for-agents) · [MCP](#mcp-server) · [Guided demo](#guided-demo)
 - [Versioning](#versioning)
 - [Architecture](#architecture)
 - [API reference](#api-reference)
@@ -247,6 +247,20 @@ KPI cards size their number to the card, so a KPI can be a **small square tile**
 
 ![A slide on a bright background; one card flipped to its sheet side](docs/live-slide-flip.jpg)
 
+### Card looks
+
+The Live bar has two pages: navigation (modes, sheets, slides) and **◐ Look ›** (theme, card look, table lines,
+effects, font, flow). **▢** cycles cards between *glass* (frosted panel), *outline* (a thin frame, no blur) and
+*clear* (no panel at all — the numbers float on the background, with a soft shadow for legibility). **☰** cycles
+table lines: *rows*, *grid* (every cell boxed) or *none*. The agent can also set a look per card:
+
+```bash
+cm style cards clear          # workbook default
+cm style lines none
+cm style chart:cStatus card=glass    # this one keeps its glass
+cm style chart:cStatus reset
+```
+
 ## Slides
 
 Any Live view can become a slide: a sheet or the combined layout, optionally focused on one card or filtered to a
@@ -328,6 +342,34 @@ v15 user 14:02:30 [main]
 - **Moves are structural events**, not 40 cell edits; formulas that pointed at the data were rewritten.
 - `cm sel` tells the agent what the user has selected — so voice commands like *"add C23 and D32"* or *"sum these"* work.
 - `expect` gives optimistic concurrency: `409` instead of overwriting a cell the user just changed.
+
+## MCP server
+
+`bin/mcp.mjs` exposes Spread to any MCP client over stdio (no dependencies; talks to the HTTP API at `CANVAS_URL`,
+default `http://127.0.0.1:3210`):
+
+```bash
+claude mcp add spread -- node /path/to/spread/bin/mcp.mjs
+```
+
+Tools: `spread_help`, `spread_overview`, `spread_changes` (keeps its own cursor, own edits filtered out),
+`spread_read`, `spread_ops`, `spread_sql`, `spread_history`, `spread_live`, `spread_screens`, `spread_present`,
+`spread_viz`, `spread_demo`.
+
+## Guided demo
+
+A 21-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
+
+```bash
+cm demo               # Enter = next step, b = back, r = repeat, 7 = jump, q = quit
+cm demo --auto 7      # hands-free, 7 s per step
+cm demo --list        # the steps
+cm demo --step 13     # one step (card looks)
+```
+
+An agent runs the same tour over MCP (`spread_demo`, step by step, telling you what to watch) or the CLI.
+[`FEATURES.md`](FEATURES.md) lists every feature with how to try it and which demo step shows it — a checklist for
+manual testing.
 
 ## Versioning
 

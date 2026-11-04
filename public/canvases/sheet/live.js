@@ -63,21 +63,30 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     <div class="lv-progress"><i></i></div>
     <div class="lv-dots"></div>
     <div class="lv-bar">
-      <div class="lv-modes"><button class="lv-btn" data-m="sheet" title="Each sheet with its own layout">Sheet</button><button class="lv-btn" data-m="auto" title="All tables, charts and KPIs from every sheet, auto-composed">✦ Combined</button></div>
-      <div class="lv-sep"></div>
-      <div class="lv-sheets"></div>
-      <div class="lv-sep"></div>
-      <div class="lv-themes"></div>
-      <div class="lv-sep"></div>
-      <button class="lv-btn" data-a="flow" title="Scroll direction (combined)">↕</button>
-      <button class="lv-btn" data-a="reveal" title="Reveal cards as they scroll into view">✨</button>
-      <button class="lv-btn" data-a="fx" title="Change effect: what a value does when the data changes (morph · scramble · vapor · glow · none)">⟡ Morph</button>
-      <button class="lv-btn" data-a="space" title="Add an empty space (e.g. for a logo) — drag it anywhere">＋ Space</button>
-      <button class="lv-btn" data-a="links" title="Show relations between tables (and which table feeds which chart)">⛓</button>
-      <button class="lv-btn" data-a="font" title="Typeface for this sheet in Live">Aa</button>
-      <button class="lv-btn" data-a="slides" title="Slides: turn views into a presentation">▤ Slides</button>
-      <button class="lv-btn" data-a="fs" title="Fullscreen">⛶</button>
-      <button class="lv-btn" data-a="exit" title="Back to edit mode (Esc)">✎ Edit</button>
+      <div class="lv-page" data-page="1">
+        <div class="lv-modes"><button class="lv-btn" data-m="sheet" title="Each sheet with its own layout">Sheet</button><button class="lv-btn" data-m="auto" title="All tables, charts and KPIs from every sheet, auto-composed">✦ Combined</button></div>
+        <div class="lv-sep"></div>
+        <div class="lv-sheets"></div>
+        <div class="lv-sep"></div>
+        <button class="lv-btn" data-a="slides" title="Slides: turn views into a presentation">▤ Slides</button>
+        <button class="lv-btn lv-more" data-a="page2" title="Look &amp; layout: theme, cards, table lines, effects, font…">◐ Look ›</button>
+        <button class="lv-btn" data-a="fs" title="Fullscreen">⛶</button>
+        <button class="lv-btn" data-a="exit" title="Back to edit mode (Esc)">✎ Edit</button>
+      </div>
+      <div class="lv-page" data-page="2">
+        <button class="lv-btn lv-more" data-a="page1" title="Back">‹</button>
+        <div class="lv-themes"></div>
+        <div class="lv-sep"></div>
+        <button class="lv-btn" data-a="cards" title="Cards: frosted glass · outline · clear (content floats on the background)">▢ Glass</button>
+        <button class="lv-btn" data-a="lines" title="Table lines: rows · grid · none">☰ Rows</button>
+        <button class="lv-btn" data-a="fx" title="Change effect: what a value does when the data changes (morph · scramble · vapor · glow · none)">⟡ Morph</button>
+        <button class="lv-btn" data-a="font" title="Typeface for this sheet in Live">Aa</button>
+        <div class="lv-sep"></div>
+        <button class="lv-btn" data-a="flow" title="Scroll direction (combined)">↕</button>
+        <button class="lv-btn" data-a="reveal" title="Reveal cards as they scroll into view">✨</button>
+        <button class="lv-btn" data-a="links" title="Show relations between tables (and which table feeds which chart)">⛓</button>
+        <button class="lv-btn" data-a="space" title="Add an empty space (e.g. for a logo) — drag it anywhere">＋ Space</button>
+      </div>
     </div>
     <div class="lv-live"><span class="lv-people"></span><i></i>LIVE</div>`;
   document.body.append(root);
@@ -131,7 +140,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       try { mount?.dispose(); } catch {}
       mount = null; mountedShader = null; $('.lv-bg').innerHTML = '';   // nothing renders behind a plain image
     } else if (img) {
-      const pic = new Image();
+      let pic = new Image();
       pic.crossOrigin = 'anonymous';
       pic.src = img;
       const tint = PRESETS[themeName()];
@@ -143,7 +152,20 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
           else mountShader('dither:' + img, PS.imageDitheringFragmentShader, { u_image: pic, u_colorFront: C(front), u_colorBack: C(back), u_colorHighlight: C('#ffffff'), u_type: 4, u_pxSize: 2, u_colorSteps: 2, u_originalColors: true, u_inverted: false, ...sizingU }, 0);
         } catch { root.classList.add('lv-has-bgimg'); im.src = img; }
       };
-      if (pic.complete) ready(); else pic.onload = ready;
+      // SVGs (and anything without intrinsic pixels) are rasterized first: the shader needs a bitmap texture
+      const rasterize = () => {
+        if (pic.naturalWidth && !/\.svg(\?|$)|svg\+xml/i.test(img)) return ready();
+        const cv = document.createElement('canvas');
+        cv.width = 1600; cv.height = 900;
+        const g = cv.getContext('2d');
+        const k = pic.naturalWidth ? Math.max(1600 / pic.naturalWidth, 900 / pic.naturalHeight) : 1;
+        const w = pic.naturalWidth ? pic.naturalWidth * k : 1600, h = pic.naturalHeight ? pic.naturalHeight * k : 900;
+        try { g.drawImage(pic, (1600 - w) / 2, (900 - h) / 2, w, h); } catch {}
+        const r = new Image();
+        r.onload = () => { pic = r; ready(); };
+        r.src = cv.toDataURL('image/png');
+      };
+      if (pic.complete) rasterize(); else pic.onload = rasterize;
     }
     if (!img || filter !== 'none') {
       if (!img) {
@@ -295,6 +317,12 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const known = all.filter((it) => idx.has(it.key)).sort((a, b) => idx.get(a.key) - idx.get(b.key));
     const rest = all.filter((it) => !idx.has(it.key) && it.kind !== 'panel');
     return [...fresh, ...known, ...rest];
+  }
+  function styleFor(key) {
+    const L = doc.live || {}, all = L.styles || {};
+    const k = key.toLowerCase(), tail = k.split('::')[1] || '';
+    const hit = Object.entries(all).find(([q]) => { const w = q.toLowerCase(); return w === k || w === tail || w === tail.slice(tail.indexOf(':') + 1); })?.[1] || {};
+    return { card: hit.card || L.cards || 'glass', lines: hit.lines || L.lines || 'rows' };
   }
   function spanOf(it, cols) {
     const o = doc.live?.spans?.[it.key];
@@ -827,6 +855,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         n.el.dataset.span = span;
         n.el.dataset.tag = doc.sheets.length > 1 ? it.sheet : '';
       } else { n.el.style.gridColumn = ''; n.el.style.gridRowEnd = ''; n.el.dataset.tag = ''; }
+      // card look: per-card override (agent-controlled) › workbook default › glass
+      const st = styleFor(it.key);
+      n.el.dataset.card = st.card;
+      if (it.kind === 'table') n.el.dataset.lines = st.lines; else delete n.el.dataset.lines;
       update(n, it);
       n.item = it;
     }
@@ -1211,6 +1243,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     root.querySelector('[data-a=reveal]').classList.toggle('on', doc.live?.reveal !== false);
     root.querySelector('[data-a=links]').classList.toggle('on', doc.live?.links !== false);
     syncFx();
+    syncStyleButtons();
     root.querySelector('[data-a=links]').style.display = mode === 'auto' ? '' : 'none';
     renderSlidePanel();
     const th = $('.lv-themes');
@@ -1265,6 +1298,25 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     while ((doc.live?.slots || []).some((x) => x.id === 'space' + i)) i++;
     transition(() => submit([{ op: 'liveLayout', slots: [...(doc.live?.slots || []), { id: 'space' + i, span: 1, h: 180 }] }]));
   };
+  // two pages: everyday navigation, and "Look" (theme, cards, lines, effects…)
+  const setPage = (n) => { root.dataset.barpage = n; try { localStorage.setItem('spread.livePage', n); } catch {} };
+  root.querySelector('[data-a=page2]').onclick = () => setPage(2);
+  root.querySelector('[data-a=page1]').onclick = () => setPage(1);
+  try { root.dataset.barpage = localStorage.getItem('spread.livePage') === '2' ? 2 : 1; } catch { root.dataset.barpage = 1; }
+  const CARD = ['glass', 'outline', 'clear'], LINES = ['rows', 'grid', 'none'];
+  const CARD_LABEL = { glass: '▢ Glass', outline: '▭ Outline', clear: '◌ Clear' }, LINE_LABEL = { rows: '☰ Rows', grid: '▦ Grid', none: '⋯ No lines' };
+  root.querySelector('[data-a=cards]').onclick = () => {
+    const nx = CARD[(CARD.indexOf(doc.live?.cards || 'glass') + 1) % CARD.length];
+    submit([{ op: 'liveLayout', cards: nx === 'glass' ? null : nx }]); render();
+  };
+  root.querySelector('[data-a=lines]').onclick = () => {
+    const nx = LINES[(LINES.indexOf(doc.live?.lines || 'rows') + 1) % LINES.length];
+    submit([{ op: 'liveLayout', lines: nx === 'rows' ? null : nx }]); render();
+  };
+  function syncStyleButtons() {
+    root.querySelector('[data-a=cards]').textContent = CARD_LABEL[doc.live?.cards || 'glass'];
+    root.querySelector('[data-a=lines]').textContent = LINE_LABEL[doc.live?.lines || 'rows'];
+  }
   root.querySelector('[data-a=fx]').onclick = () => {
     const next = FX[(FX.indexOf(fxKind()) + 1) % FX.length];
     submit([{ op: 'liveLayout', fx: next === 'morph' ? null : next }]);

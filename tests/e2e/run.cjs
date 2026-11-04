@@ -74,6 +74,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }, 10000, 'Live bar awake (' + sel + ')').catch(async (e) => {
       throw new Error(e.message + ' | ' + await p.evaluate(() => ({ cls: [...document.querySelectorAll('.lv')].map((x) => x.className), under: document.elementFromPoint(innerWidth / 2, innerHeight - 40)?.outerHTML.slice(0, 80), vt: document.getAnimations().filter((a) => String(a.effect?.pseudoElement || '').includes('view-transition')).slice(0, 3).map((a) => [a.effect.pseudoElement, a.playState, Math.round(a.currentTime), a.effect.getComputedTiming().duration, a.effect.getComputedTiming().iterations]), tl: Math.round(document.timeline.currentTime), hidden: document.visibilityState, cnt: window.__cnt, focus: document.hasFocus(), anims: document.getAnimations().length })).then(JSON.stringify));
     });
+    // the bar has two pages; turn to the one that holds the button
+    const pg = await p.evaluate((q) => document.querySelector('.lv .lv-bar ' + q)?.closest('.lv-page')?.dataset.page, sel);
+    const cur = await p.evaluate(() => document.querySelector('.lv').dataset.barpage || '1');
+    if (pg && pg !== cur) await p.click(pg === '2' ? '.lv [data-a=page2]' : '.lv [data-a=page1]');
     await p.click(sel);
   };
   const goto = async (p, ref) => { await p.fill('.sv-name', ref); await p.press('.sv-name', 'Enter'); await sleep(150); };

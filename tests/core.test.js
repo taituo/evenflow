@@ -316,3 +316,20 @@ test('traffic lights: rules, formulas as thresholds, follow moves and inserts, e
   assert.deepEqual(parseRule('<==Settings!B1:red'), { when: '<=', value: '=Settings!B1', light: 'red' });
   assert.deepEqual(parseRule('contains late:#ff0000'), { when: 'contains', value: 'late', style: { fill: '#ff0000' } });
 });
+
+test('a bordered block moves with its whole frame and leaves no lines behind', () => {
+  const st = wb();
+  S.apply(st, { op: 'set', cells: { B2: 'a', C3: 'b' } });
+  S.apply(st, { op: 'borders', range: 'B2:C3', type: 'outer', style: 'medium', color: '#188038' });
+  const before = JSON.stringify(st);
+  const r = S.apply(st, { op: 'move', from: 'B2:C3', to: 'F8' });
+  const sh = st.sheets[0];
+  const bdAt = (A) => sh.cells[A]?.s?.bd || null;
+  for (const A of ['B1', 'C1', 'A2', 'A3', 'D2', 'D3', 'B4', 'C4']) assert.equal(bdAt(A), null, `no line left at ${A}`);
+  assert.equal(bdAt('F7').b, 'medium #188038', 'mirror above the new place');
+  assert.equal(bdAt('E8').r, 'medium #188038', 'mirror left of the new place');
+  assert.equal(bdAt('F8').t, 'medium #188038');
+  for (const inv of r.inverse) S.apply(st, inv);
+  const canon = (x) => JSON.stringify(JSON.parse(x), (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((q) => [q, v[q]])) : v));
+  assert.equal(canon(JSON.stringify(st)), canon(before));
+});

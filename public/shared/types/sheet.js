@@ -363,6 +363,11 @@ function opMove(st, op) {
   const pre = preCells(st);
   const preT = preTables(st);
   const srcName = src.name, dstName = dst.name;
+  // borders are stored on both sides of an edge; the ring of cells around the source and the destination
+  // gets its halves fixed below, so a bordered block moves as a whole (snapshot for exact undo)
+  const ring = (B) => { const out = []; for (let c = B.c1; c <= B.c2; c++) out.push([c, B.r1 - 1, 'b'], [c, B.r2 + 1, 't']); for (let r = B.r1; r <= B.r2; r++) out.push([B.c1 - 1, r, 'r'], [B.c2 + 1, r, 'l']); return out.filter(([c, r]) => c >= 0 && r >= 0); };
+  const ringStyles = (sh, B) => Object.fromEntries(ring(B).map(([c, r]) => { const A = addr(c, r); return [A, sh.cells[A]?.s ? clone(sh.cells[A].s) : null]; }));
+  const preRingSrc = ringStyles(src, R), preRingDst = ringStyles(dst, D);
 
   const moving = [];
   for (const [A, cell] of Object.entries(src.cells)) {
@@ -379,6 +384,23 @@ function opMove(st, op) {
     const A = addr(p.c + dc, p.r + dr);
     dst.cells[A] = cell;
     movedKeys.add(A);
+  }
+  const setSide = (sh, A, side, v) => {
+    const cell = sh.cells[A] || (v ? (sh.cells[A] = { v: '' }) : null);
+    if (!cell) return;
+    const st2 = { ...(cell.s || {}) }, bd = { ...(st2.bd || {}) };
+    if (v) bd[side] = v; else delete bd[side];
+    if (Object.keys(bd).length) st2.bd = bd; else delete st2.bd;
+    if (Object.keys(st2).length) cell.s = st2; else delete cell.s;
+    tidy(sh, A);
+  };
+  const inside = (sh, B, c, r) => sh === dst && inRange(D, c, r) && B !== D;
+  for (const [c, r, side] of ring(R)) if (!inside(src, R, c, r)) setSide(src, addr(c, r), side, null);
+  const OPPO = { t: 'b', b: 't', l: 'r', r: 'l' };
+  for (const [c, r, side] of ring(D)) {
+    const inner = side === 'b' ? [c, r + 1] : side === 't' ? [c, r - 1] : side === 'r' ? [c + 1, r] : [c - 1, r];
+    const v = dst.cells[addr(inner[0], inner[1])]?.s?.bd?.[OPPO[side]];
+    if (v) setSide(dst, addr(c, r), side, v);
   }
   const rewritten = rewriteAll(st, (ref, rs) => {
     const box = refBox(ref);
@@ -411,6 +433,8 @@ function opMove(st, op) {
     { op: 'move', sheet: dstName, from: rangeToString(D), to: quoteSheet(srcName) + '!' + addr(R.c1, R.r1), keepRefs: true },
     ...buildRestore(st, pre, mapPos, touches),
     preT,
+    { op: 'cellStyles', sheet: dstName, styles: preRingDst },
+    { op: 'cellStyles', sheet: srcName, styles: preRingSrc },
   ];
   return {
     inverse,
@@ -793,7 +817,9 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
 // ------------------------------------------------------------------ live (combined) layout — workbook level
 // st.live = { order:[key], spans:{key:{span,h}}, hidden:[key], flow:'vertical'|'horizontal', reveal:bool,
 //             slots:[{id, span, h, image?}], panels:[{id, title, text, value, label, image, span, h, by}] }
-const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels', 'slides', 'links', 'fx'];
+const LIVE_KEYS = ['order', 'spans', 'hidden', 'flow', 'reveal', 'slots', 'panels', 'slides', 'links', 'fx', 'cards', 'lines', 'styles', 'carousel'];
+export const CARD_STYLES = ['glass', 'outline', 'clear'];
+export const TABLE_LINES = ['rows', 'grid', 'none'];
 function setLive(st, patch) {
   const old = {};
   const L = { ...(st.live || {}) };
@@ -806,6 +832,23 @@ function setLive(st, patch) {
   return { op: 'liveLayout', ...old };
 }
 function opLiveLayout(st, op) {
+  if (op.cards != null && !CARD_STYLES.includes(op.cards)) fail(`cards must be ${CARD_STYLES.join(' | ')}`);
+  if (op.lines != null && !TABLE_LINES.includes(op.lines)) fail(`lines must be ${TABLE_LINES.join(' | ')}`);
+  if (op.carousel != null && !(+op.carousel >= 2 && +op.carousel <= 600)) fail('carousel: seconds per card, 2–600');
+  if (op.styles != null) {
+    if (typeof op.styles !== 'object' || Array.isArray(op.styles)) fail('styles: { "<card key>": { card?, lines? } }');
+    const clean = {};
+    for (const [k, v] of Object.entries(op.styles)) {
+      if (!v) continue;
+      if (v.card != null && !CARD_STYLES.includes(v.card)) fail(`styles["${k}"].card must be ${CARD_STYLES.join(' | ')}`);
+      if (v.lines != null && !TABLE_LINES.includes(v.lines)) fail(`styles["${k}"].lines must be ${TABLE_LINES.join(' | ')}`);
+      const o = {};
+      if (v.card) o.card = v.card;
+      if (v.lines) o.lines = v.lines;
+      if (Object.keys(o).length) clean[String(k).slice(0, 120)] = o;
+    }
+    op = { ...op, styles: Object.keys(clean).length ? clean : null };
+  }
   const inv = setLive(st, op);
   return { inverse: [inv], changes: [{ k: 'layout', sheet: '(live)', what: 'live layout: ' + LIVE_KEYS.filter((k) => k in op).join(', ') }] };
 }

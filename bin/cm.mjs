@@ -72,6 +72,9 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm present off
   cm viz ls | spec | check pack.json | add pack.json | rm ID       SVG visual packs (spread-viz/1, see cm viz spec)
   cm viz card battery Project!C12 --at K2   a visual card · in a cell: =VIZ("status", B7)
+  cm demo [--auto 7] [--step N] [--from N] [--list] [--screen tv]   guided tour of every feature (on a "demo" workbook)
+  cm style cards glass|outline|clear · cm style lines rows|grid|none     Live look for the whole workbook
+  cm style chart:status card=clear · cm style Tasks lines=grid · cm style Tasks reset   per card (keys from cm live)
   cm screens                       open Live views (TV, laptop…) — target one with --screen id
   cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
   cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
@@ -250,6 +253,49 @@ switch (cmd) {
       break;
     }
     out('cm viz ls | spec | show ID | check FILE | add FILE | rm ID | card PACK CELL [--at K2 --title … --size small]   (FILE "-" = stdin)');
+    break;
+  }
+  case 'demo': {
+    // the guided tour: every feature, driven over the API on a separate "demo" workbook
+    const { STEPS, runStep, listSteps } = await import('../lib/demo.js');
+    const flag = (n, dflt) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; const has = v && !v.startsWith('--'); args.splice(i, has ? 2 : 1); return has ? v : dflt; };
+    const auto = flag('auto', '7'), step = flag('step'), from = flag('from'), screen = flag('screen');
+    if (args.includes('--list')) { out(listSteps()); break; }
+    const show = async (i) => {
+      const s = STEPS[i];
+      console.log(`\n\x1b[1m${i + 1}/${STEPS.length}  ${s.title}\x1b[0m`);
+      if (s.features.length) console.log(`  shows: ${s.features.join(' · ')}`);
+      console.log(`  look:  ${s.look.replaceAll('<BASE>', BASE)}`);
+      try { const t = await runStep(BASE, i, { screen }); if (t) console.log(t.split('\n').map((l) => '  │ ' + l).join('\n')); } catch (e) { console.log('  ✗ ' + e.message); }
+    };
+    if (step) { await show(+step - 1); break; }
+    let i = from ? +from - 1 : 0;
+    console.log(`Spread tour — ${STEPS.length} steps on the "demo" workbook. Open ${BASE}/#demo in a browser.${auto ? '' : '\nEnter = next · b = back · r = repeat · q = quit'}`);
+    if (auto) { for (; i < STEPS.length; i++) { await show(i); await new Promise((r) => setTimeout(r, +auto * 1000)); } break; }
+    const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+    const ask = () => new Promise((r) => rl.question('\n› ', r));
+    await show(i);
+    for (;;) {
+      const a = (await ask()).trim().toLowerCase();
+      if (a === 'q') break;
+      if (a === 'r') { await show(i); continue; }
+      if (a === 'b') { i = Math.max(0, i - 1); await show(i); continue; }
+      if (/^\d+$/.test(a)) { i = Math.min(STEPS.length - 1, +a - 1); await show(i); continue; }
+      if (i >= STEPS.length - 1) break;
+      await show(++i);
+    }
+    rl.close();
+    break;
+  }
+  case 'style': {
+    // Live look: cm style cards glass|outline|clear · cm style lines rows|grid|none · cm style chart:status card=clear [lines=none] · cm style Tasks reset
+    const [what, ...rest] = args;
+    if (what === 'cards' || what === 'lines') { await ops([{ op: 'liveLayout', [what]: rest[0] === 'glass' || rest[0] === 'rows' || rest[0] === 'reset' ? null : rest[0] }]); break; }
+    if (!what) { const L = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc.live || {}; out(`cards: ${L.cards || 'glass'} · lines: ${L.lines || 'rows'}\n` + Object.entries(L.styles || {}).map(([k, v]) => `  ${k}: ${Object.entries(v).map(([a, b]) => a + '=' + b).join(' ')}`).join('\n')); break; }
+    const styles = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc.live?.styles || {};
+    if (rest[0] === 'reset') delete styles[what];
+    else styles[what] = { ...(styles[what] || {}), ...Object.fromEntries(rest.map((x) => x.split('='))) };
+    await ops([{ op: 'liveLayout', styles: Object.keys(styles).length ? styles : null }]);
     break;
   }
   case 'screens': out(await call('GET', '/api/screens')); break;

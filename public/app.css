@@ -515,3 +515,31 @@ body.sv-moving-table, body.sv-moving-table * { cursor: grabbing !important; }
 .vp-install summary { cursor: pointer; font-weight: 600; color: #1a73e8; }
 .vp-install textarea { width: 100%; font: 12px ui-monospace, monospace; box-sizing: border-box; margin: 6px 0; }
 .vp-msg ul { margin: 4px 0 6px; padding-left: 18px; color: #3c4043; } .vp-msg .bad { color: #c5221f; } .vp-msg .good { color: #188038; }
+
+/* Live bar: two pages */
+.lv-page { display: flex; align-items: center; gap: 6px; }
+.lv:not([data-barpage="2"]) .lv-page[data-page="2"], .lv[data-barpage="2"] .lv-page[data-page="1"] { display: none; }
+.lv-page { animation: lv-fade .25s ease both; }
+.lv-btn.lv-more { color: #fff; background: rgba(255,255,255,.1); }
+@media (max-width: 700px) { .lv-page { flex-wrap: wrap; justify-content: center; row-gap: 2px; } .lv-page .lv-sep { display: none; } }
+
+/* Live card styles: glass (default) · outline · clear — set for the workbook, overridable per card */
+.lv-card[data-card="outline"] { background: none; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; border-color: rgba(255,255,255,.38); }
+.lv-card[data-card="outline"].lv-ink-dark { border-color: rgba(20,20,45,.35); background: none; }
+.lv-card[data-card="clear"] { background: none; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; border-color: transparent; }
+.lv-card[data-card="clear"].lv-ink-dark { background: none; border-color: transparent; }
+.lv-card[data-card="clear"] { text-shadow: 0 1px 2px rgba(0,0,0,.35), 0 2px 18px rgba(0,0,0,.35); }
+.lv-card[data-card="clear"].lv-ink-dark { text-shadow: 0 1px 2px rgba(255,255,255,.4), 0 2px 18px rgba(255,255,255,.45); }
+.lv-card[data-card="clear"] .lv-num, .lv-card[data-card="clear"] .lv-statv { text-shadow: 0 2px 24px rgba(0,0,0,.35); }
+.lv-card[data-card="clear"]:hover { border-color: rgba(255,255,255,.18); }
+.lv-card[data-card="clear"].lv-lit, .lv-card[data-card="outline"].lv-lit { box-shadow: none; }
+.lv-card[data-card="clear"][data-tag]::after { opacity: .6; }
+/* table lines: rows (default) · grid · none */
+.lv-table[data-lines="grid"] th, .lv-table[data-lines="grid"] td { border: 1px solid rgba(255,255,255,.16); border-radius: 0; }
+.lv-table.lv-ink-dark[data-lines="grid"] th, .lv-table.lv-ink-dark[data-lines="grid"] td { border-color: rgba(20,20,45,.14); }
+.lv-table[data-lines="none"] th, .lv-table[data-lines="none"] td { border: 0; }
+.lv-table[data-lines="none"] th { padding-bottom: 8px; }
+/* grid toolbar: two pages */
+.tbp { display: contents; }
+#toolslot:not([data-page="2"]) .tbp2, #toolslot[data-page="2"] .tbp1 { display: none; }
+.tb.more { font-weight: 700; }
