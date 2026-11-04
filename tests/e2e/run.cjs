@@ -754,12 +754,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const at = () => M.locator('.lv-pin', { hasText: 'Alpha' }).evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)]; });
     const before = await at();
     await ops([{ op: 'updateRows', table: 'Geo', key: 'Alpha', set: { Lat: 60.175, Lon: 24.93 } }]);
-    await sleep(500);
-    const mid = await at();
-    await sleep(1600);
+    const seen = new Set();
+    for (let i = 0; i < 16; i++) { seen.add(String(await at())); await sleep(150); }
+    await sleep(800);
     const after = await at();
     ok(after[0] < before[0] && after[1] < before[1], `moved up-left: ${before} → ${after}`);
-    ok(mid[0] !== after[0] || mid[1] !== after[1], 'it glides (mid-way position differs from the end)');
+    seen.delete(String(before)); seen.delete(String(after));
+    ok(seen.size >= 1, 'it glides through positions in between');
     await ops([{ op: 'updateChart', id: 'geo', focus: 'Beta' }]);
     await until(() => M.locator('.lv-mapinfo.on', { hasText: 'Beta' }).count(), 8000, 'focused point shows its row');
     ok((await M.locator('.lv-mapinfo').textContent()).includes('late'), 'row values in the popup');
