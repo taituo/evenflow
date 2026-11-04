@@ -11,8 +11,8 @@ Zero dependencies (two libraries vendored: shaders and maps). Node 22.13+ and a 
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 56 tests: engine, API, CLI, MCP, maps, feeds, replay, the demo tour, a 2000-round undo/redo fuzz over every op
-npm run e2e        # 28 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, maps, replay, table tools, remote, phone, XSS
+npm test           # 62 tests: engine, API, CLI, MCP, maps, feeds, the race simulator, replay, the demo tour, a 2000-round undo/redo fuzz over every op
+npm run e2e        # 29 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, maps, replay, the Pitwall, table tools, remote, phone, XSS
 ```
 
 ![The grid](docs/grid.jpg)
@@ -28,7 +28,7 @@ npm run e2e        # 28 browser tests (Playwright): two users, Live, slides, tra
 - [SVG visuals](#svg-visuals)
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
-- [Live mode](#live-mode) · [Maps](#maps) · [Open data from Finland](#open-data-from-finland) · [Time replay](#time-replay)
+- [Live mode](#live-mode) · [Race weekend](#race-weekend-pitwall) · [Maps](#maps) · [Open data from Finland](#open-data-from-finland) · [Time replay](#time-replay)
 - [Slides](#slides)
 - [Multi-user and history](#multi-user-and-history)
 - [Remote control](#remote-control)
@@ -334,6 +334,51 @@ The phone remote has ⏱ 15 min / 1 h / Today buttons; its ◀ ⏯ ▶ drive the
 
 ![Replay: the dashboard rebuilding itself, sped up, with a clock](docs/live-replay.jpg)
 
+## Race weekend (Pitwall)
+
+![The Pitwall: a simulated race — car, tyres, brakes, gauges, vitals, track, speed trace](docs/pitwall.jpg)
+
+A telemetry dashboard built entirely from Spread's own parts, fed by a session simulator — and a template for any
+"things moving along a line, one followed closely" tracking:
+
+```bash
+cm sim start race --laps 20 --speed 4       # or: practice --minutes 15 · qualifying; --focus HAM --seed 7
+cm sim focus LEC                            # follow another car (the car, tyres, trail and vitals switch)
+cm sim                                      # status: lap, flag, leader, seed
+cm replay --from m12 --to m13 --speed 10    # every session starts and ends with a milestone
+```
+
+- **The simulator** (`lib/sim.js`) drives 22 cars round an original 5.3 km circuit: a speed profile from the corner
+  radii and acceleration / braking limits, tyre wear, fuel, pit stops, the chequered flag; telemetry of the focus car
+  (speed, RPM, temperatures, pressures, brakes, DRS), the driver's vitals and the weather. Seeded and deterministic.
+  The 2026 grid's names are used; every number is simulated.
+- **Every tick is one versioned batch** (≈ 9 kB), written into named tables on a `Data` sheet: `Cars`, `Tyres`,
+  `Live` (key/value), `Circuit`, `Turns`, `Zones`, `LapTimes`, rolling `…Trace` tables. So the grid, Live, the change
+  feed and **time replay** all work on a race exactly as on any workbook — replay a race, a practice, the moment of a
+  pit stop.
+- **The Pitwall** sheet is 34 ordinary cards anchored on one sheet: visual packs (`car`, `tyre-panel`, `brake`, `arc`,
+  `dial`, `segments`, `pills`, `bar`, `vital`, `dots`, `driver`, `position`, `race-flag`), area charts with gradient
+  traces over rolling windows, KPIs, and two **track cards**.
+
+### Track cards
+
+`type: "track"` draws any line from a table of `X, Y` (or `Lat, Lon`) points — a circuit, a bus line, a production
+line, a running track — and puts the rows of other tables on it by **distance**: laps as a number (`16.42` = lap 16,
+42 % round) or metres with `length`. Things glide forwards along the line between updates; `zones` (from–to), `marks`
+(turn numbers, callouts), `sectors` color the line, and `trail` traces a glowing stretch behind one of them.
+`layout: "line"` shows the same data as distance along the track, with zones as bands and a bubble.
+
+```json
+{"op":"addChart","type":"track","shape":{"table":"Circuit"},"layers":[{"table":"Cars","at":"Dist","label":"Code","color":"Color"}],
+ "zones":{"table":"Zones"},"marks":{"table":"Turns"},"sectors":[0.33,0.67],"trail":"HAM","at":"K2"}
+```
+
+### Visuals with many values
+
+A `multi` pack takes a range — `=VIZ("tyre-panel", B2:D2, "FL tire")`, or a card on `B2:J2` — with a color input
+for liveries; any range pack takes its scale where it is used (`=VIZ("arc", A1, "°C", 60, 150)`); a card's label can
+come from a cell (`"label": "=Data!C35"`). See [`VIZ_SPEC.md`](VIZ_SPEC.md).
+
 ## Slides
 
 Any Live view can become a slide: a sheet or the combined layout, optionally focused on one card or filtered to a
@@ -427,11 +472,11 @@ claude mcp add spread -- node /path/to/spread/bin/mcp.mjs
 
 Tools: `spread_help`, `spread_overview`, `spread_changes` (keeps its own cursor, own edits filtered out),
 `spread_read`, `spread_ops`, `spread_sql`, `spread_history`, `spread_live`, `spread_screens`, `spread_present`,
-`spread_map`, `spread_replay`, `spread_feed`, `spread_viz`, `spread_demo`.
+`spread_map`, `spread_replay`, `spread_feed`, `spread_sim`, `spread_viz`, `spread_demo`.
 
 ## Guided demo
 
-A 24-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
+A 25-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
 
 ```bash
 cm demo               # Enter = next step, b = back, r = repeat, 7 = jump, q = quit
@@ -504,6 +549,7 @@ Text responses by default; add `format=json` for JSON.
 | `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, replay: {from, to?, speed?, loop?, gaps?} \| "stop", screen}`) / read what a screen shows |
 | `GET /api/feeds[?kinds]` · `POST /api/feeds` · `POST /api/feeds/run` · `POST /api/feeds/set` · `DELETE /api/feeds?id=` | open data feeds into tables |
 | `GET /api/config` · `POST /api/config` · `GET /tiles/nls/<layer>/<z>/<x>/<y>` | server settings (NLS key) · cached Finnish map tiles |
+| `GET /api/sim` · `POST /api/sim` | session simulator: `{action: start\|stop\|focus, session, laps, minutes, speed, focus, seed}` |
 | `GET /api/replay?from=&to=` | the doc as it was at `from` and every batch up to `to` (text summary, or `format=json`) |
 | `GET /api/screens` | open Live views (TVs, laptops) and what they show |
 | `GET /api/viz` · `GET /api/viz/spec` · `POST /api/viz[?dry=1]` · `DELETE /api/viz?id=` | SVG visual packs: list, the spec, validate / install, remove |

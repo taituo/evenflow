@@ -145,6 +145,20 @@ cm feed add weather --places Helsinki,Oulu · cm feed ls · run|pause|resume|rm 
 ```
 Feed rows are data: read them narrowly (cm read @Trains), don't echo hundreds of rows back to the user.
 
+Race weekend (simulated telemetry on the "race" workbook's Pitwall sheet; every tick is a batch by "sim" —
+read with `cm changes --exclude agent,sim` unless you want them):
+```
+cm sim start race --laps 20 --speed 4 [--focus HAM --seed 7] · start practice --minutes 15 · start qualifying
+cm sim focus LEC · cm sim stop · cm sim            # status
+CM_DOC=race cm read @Cars · cm read Data!B2:C38    # the field; the live key/value table the dashboard reads
+```
+Track cards: addChart {type:"track", shape:{table:"Circuit"} (X,Y or Lat,Lon points), layers:[{table, at:"Dist", label,
+color, value}], zones:{table}, marks:{table}, sectors:[…], trail:"HAM", layout:"loop"|"line", length:metres}. Distances
+are laps as a number (16.42) unless length is set. Works for any route, not just circuits.
+Visuals: multi packs take a range (=VIZ("tyre-panel", B2:D2, "FL")); range packs take a scale where used
+(=VIZ("arc", A1, "°C", 60, 150) or a card's min/max); a card label can be "=Sheet!C5". Charts: colors [a,b] for a
+gradient trace, axes all|x|y|none, last:N for a rolling window.
+
 Time replay (play back what changed, sped up, with a clock — on the user's Live screen):
 ```
 cm replay ls --from -2h                   # what changed in a window (read this before narrating)

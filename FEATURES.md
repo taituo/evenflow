@@ -108,6 +108,18 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | Offline: the basemap drops out, the points stay | disconnect the network | |
 | ☐ | Satellite imagery (Sentinel-2) and Finnish aerial / topo / background maps (NLS, through a caching proxy) | map editor → Map; `cm config nls-key KEY` | |
 
+## Race weekend (Pitwall)
+
+| ✓ | Feature | Try it | Demo |
+|---|---|---|---|
+| ☐ | Race / qualifying / practice simulator: 22 cars, physics-ish laps, tyre wear, pit stops, the flag | `cm sim start race --laps 10 --speed 4` | 24 |
+| ☐ | Pitwall dashboard: car (tyres + brakes colored by temperature, livery), tyre panels, brakes, gauges, vitals, track, speed trace, distance bar | `/?live=Pitwall#race` | 24 |
+| ☐ | Follow another car: everything switches | `cm sim focus LEC` | 24 |
+| ☐ | Each session is a milestone pair; replay a whole race, or the moment of a pit stop | Live → ⏱ Replay → *Between milestones* | 24 |
+| ☐ | Track cards for any route (X,Y or Lat,Lon), things by distance, zones, marks, sectors, trail; line layout | `addChart {type:"track"}` | 24 |
+| ☐ | Multi-value visuals from a range; color inputs; per-use scales; labels from cells | `=VIZ("tyre-panel", B2:D2, "FL")` · `=VIZ("arc", A1, "°C", 60, 150)` | 24 |
+| ☐ | Gradient traces over rolling windows (`last`), axes on/off | | 24 |
+
 ## Open data from Finland
 
 | ✓ | Feature | Try it | Demo |
@@ -145,6 +157,6 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 |---|---|---|---|
 | ☐ | REST API (text by default, `format=json`) | `curl :3210/api/overview` | all |
 | ☐ | CLI `cm` (overview, changes, read, set, tables, SQL, charts, lights, visuals, Live, slides, screens, history) | `node bin/cm.mjs help` | all |
-| ☐ | MCP server (`bin/mcp.mjs`): 15 tools incl. maps, feeds, replay and the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
+| ☐ | MCP server (`bin/mcp.mjs`): 16 tools incl. maps, feeds, the race simulator, replay and the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
 | ☐ | Change feed: only what changed, moves as one line, recalculated values | `cm changes` | 3 |
 | ☐ | The agent reads the screen (`cm live`) | | 11 |

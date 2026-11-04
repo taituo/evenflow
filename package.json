@@ -1,6 +1,6 @@
 {
   "name": "spread",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Spread — a spreadsheet you share with your AI agent, and a live dashboard that builds itself from it. Zero dependencies.",
   "type": "module",
   "bin": { "cm": "bin/cm.mjs" },
