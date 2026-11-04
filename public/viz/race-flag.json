@@ -1,0 +1,99 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "race-flag",
+ "kind": "states",
+ "name": "Track status flag",
+ "description": "Green, yellow, double yellow, red, safety car, virtual safety car, blue, chequered — a waving flag.",
+ "states": [
+  {
+   "id": "green",
+   "label": "Green",
+   "when": "=",
+   "value": [
+    "green",
+    "clear",
+    "go"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#16a34a\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "yellow",
+   "label": "Yellow",
+   "when": "=",
+   "value": [
+    "yellow",
+    "caution"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#facc15\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "double",
+   "label": "Double yellow",
+   "when": "=",
+   "value": [
+    "double yellow",
+    "double",
+    "yy"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#facc15\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"47\" text-anchor=\"middle\" class=\"t\" fill=\"#111\">!!</text><text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "red",
+   "label": "Red flag",
+   "when": "=",
+   "value": [
+    "red",
+    "stop"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#dc2626\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "sc",
+   "label": "Safety car",
+   "when": "=",
+   "value": [
+    "sc",
+    "safety car"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#facc15\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"47\" text-anchor=\"middle\" class=\"t\" fill=\"#111\">SC</text><text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "vsc",
+   "label": "Virtual SC",
+   "when": "=",
+   "value": [
+    "vsc",
+    "virtual safety car"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#facc15\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"47\" text-anchor=\"middle\" class=\"t\" fill=\"#111\">VSC</text><text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "blue",
+   "label": "Blue flag",
+   "when": "=",
+   "value": [
+    "blue"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#2563eb\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "chequered",
+   "label": "Finish",
+   "when": "=",
+   "value": [
+    "chequered",
+    "checkered",
+    "finish",
+    "end"
+   ],
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient><pattern id=\"ck\" width=\"16\" height=\"16\" patternUnits=\"userSpaceOnUse\"><rect width=\"16\" height=\"16\" fill=\"#fff\"/><rect width=\"8\" height=\"8\" fill=\"#111\"/><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" fill=\"#111\"/></pattern></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#ck)\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  },
+  {
+   "id": "none",
+   "label": "",
+   "when": "any",
+   "svg": "<svg viewBox=\"0 0 160 110\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-size:22px;letter-spacing:.04em}.c{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.14em;fill:currentColor;opacity:.75;text-transform:uppercase}</style><defs><linearGradient id=\"fs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\".3\" stop-color=\"#fff\" stop-opacity=\".18\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\".8\" stop-color=\"#fff\" stop-opacity=\".12\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".25\"/></linearGradient></defs>\n<rect x=\"10\" y=\"6\" width=\"5\" height=\"96\" rx=\"2\" fill=\"#d8dbe2\"/><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"#2a2d35\"><animate attributeName=\"d\" dur=\"2.4s\" repeatCount=\"indefinite\" values=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z;M15 10q34 6 66-2t68 4v58q-36-6-68 2t-66-4z;M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\"/></path><path d=\"M15 10q30-8 64 2t70-2v58q-34 10-70 0t-64 2z\" fill=\"url(#fs)\"/>\n<text x=\"82\" y=\"100\" text-anchor=\"middle\" class=\"c\">{{label}}</text></svg>"
+  }
+ ]
+}

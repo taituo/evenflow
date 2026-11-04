@@ -319,7 +319,7 @@ function rewriteAll(st, fn, originOf = () => null) {
       };
       ch.at = tr(ch.at, false, true);
       if (ch.range) ch.range = tr(ch.range, true);
-      if (ch.value) ch.value = tr(ch.value, false);
+      if (ch.value) ch.value = tr(ch.value, ch.value.includes(':'));   // a range feeds a multi visual
       if (ch.value2) ch.value2 = tr(ch.value2, false);
     }
   }
@@ -712,10 +712,30 @@ function opSetConds(st, op) {
 }
 
 // ------------------------------------------------------------------ charts (floating, live)
-export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz', 'map'];
-const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors', 'layers', 'view', 'basemap', 'follow', 'focus', 'trail'];
+export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz', 'map', 'track'];
+const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors', 'layers', 'view', 'basemap', 'follow', 'focus', 'trail', 'min', 'max', 'shape', 'zones', 'marks', 'sectors', 'layout', 'length', 'axes', 'last'];
 export const MAP_BASES = ['dark', 'light', 'bright', 'satellite', 'aerial', 'topo', 'fi', 'none'];
 const LAYER_KEYS = ['table', 'name', 'lat', 'lon', 'label', 'color', 'pack', 'value', 'route', 'hidden'];
+const TRACK_LAYER = ['table', 'name', 'at', 'label', 'color', 'value', 'hidden'];
+function checkTrack(ch) {
+  const tab = (o, where, keys) => {
+    if (typeof o === 'string') o = { table: o };
+    if (!o || typeof o.table !== 'string' || !o.table.trim()) fail(`track ${where} needs table`);
+    for (const k of Object.keys(o)) if (!keys.includes(k)) fail(`track ${where}: unknown key "${k}" (${keys.join(', ')})`);
+    return Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== false && v !== ''));
+  };
+  ch.layout ||= 'loop';
+  if (!['loop', 'line'].includes(ch.layout)) fail('track layout: loop (a circuit, a route) | line (distance along it)');
+  if (ch.layout === 'loop') { if (!ch.shape) fail('track needs shape: {"table":"Circuit"} — a table of X,Y (or Lat,Lon) points along the line'); }
+  if (ch.shape) ch.shape = tab(ch.shape, 'shape', ['table', 'x', 'y', 'open']);
+  ch.layers = (ch.layers || []).map((L) => tab(L, 'layer', TRACK_LAYER));
+  if (ch.layers.length > 8) fail('track: at most 8 layers');
+  if (ch.zones) ch.zones = tab(ch.zones, 'zones', ['table', 'from', 'to', 'label', 'color']);
+  if (ch.marks) ch.marks = tab(ch.marks, 'marks', ['table', 'at', 'label']);
+  if (ch.sectors != null && !(Array.isArray(ch.sectors) && ch.sectors.length <= 8 && ch.sectors.every((x) => typeof x === 'number' && x > 0 && x < 1))) fail('track sectors: fractions of a lap, e.g. [0.33, 0.66]');
+  if (ch.length != null && !(typeof ch.length === 'number' && ch.length > 0)) fail('track length: a positive number (metres) — then distances are metres, otherwise laps (0.42 = 42 % of a lap)');
+  if (ch.trail != null && typeof ch.trail !== 'string') fail('track trail: the label of the point to trace');
+}
 function checkMap(ch) {
   if (!Array.isArray(ch.layers) || !ch.layers.length) fail('map needs layers: [{"table":"Places"}] (a named table with lat/lon columns)');
   if (ch.layers.length > 12) fail('map: at most 12 layers');
@@ -749,9 +769,13 @@ function findChart(st, id) {
 }
 function checkChart(ch) {
   if (!CHART_TYPES.includes(ch.type)) fail(`Bad chart type "${ch.type}" (${CHART_TYPES.join('|')})`);
+  if (ch.last != null && !(Number.isInteger(ch.last) && ch.last >= 2 && ch.last <= 5000)) fail('last: how many of the newest rows to show (2–5000), e.g. a rolling trace');
+  if (ch.axes != null && !['all', 'x', 'y', 'none'].includes(ch.axes)) fail('axes: all | x | y | none');
+  if ((ch.min != null || ch.max != null) && !(typeof ch.min === 'number' && typeof ch.max === 'number' && ch.max > ch.min)) fail('min and max: numbers with max > min (the scale of a visual)');
   if (ch.type === 'map') checkMap(ch);
+  else if (ch.type === 'track') checkTrack(ch);
   else if (ch.type === 'viz') {
-    if (!ch.value) fail('viz chart needs value (cell, e.g. "C12")');
+    if (!ch.value) fail('viz chart needs value (a cell "C12", or a range "B2:J2" for a multi pack)');
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(ch.pack || ''))) fail('viz chart needs pack (an SVG pack id, e.g. "battery")');
   } else if (ch.type === 'kpi' ? !ch.value : !ch.range && !ch.table) fail(ch.type === 'kpi' ? 'kpi chart needs value (cell, e.g. "C12")' : 'chart needs range ("B6:C10") or table');
   if (!parseRange(splitSheet(ch.at)[1])) fail(`Bad anchor "${ch.at}"`);
@@ -769,6 +793,7 @@ function opAddChart(st, op) {
   if (typeof ch.y === 'string') ch.y = ch.y.split(',').map((x) => x.trim());
   checkChart(ch);
   if (ch.type === 'map') for (const L of ch.layers) findTable(st, L.table);
+  if (ch.type === 'track') for (const L of [ch.shape, ...ch.layers, ch.zones, ch.marks].filter(Boolean)) findTable(st, L.table);
   (sh.charts ||= []).push(ch);
   return { inverse: [{ op: 'deleteChart', id }], changes: [{ k: 'chart', action: 'add', id, sheet: sh.name, type: ch.type, source: ch.type === 'map' ? ch.layers.map((L) => '@' + L.table).join(' ') : ch.table ? '@' + ch.table : ch.range || ch.value, at: ch.at }] };
 }
@@ -778,8 +803,15 @@ function opUpdateChart(st, op) {
   for (const k of CHART_KEYS) if (k in op) { old[k] = ch[k] === undefined ? null : clone(ch[k]); if (op[k] === null) delete ch[k]; else ch[k] = clone(op[k]); }
   if (typeof ch.range === 'string' && ch.range.startsWith('@')) { ch.table = ch.range.slice(1); delete ch.range; if (!('table' in old)) old.table = null; }
   if ('range' in op && op.range && !String(op.range).startsWith('@') && ch.table) { if (!('table' in old)) old.table = ch.table; delete ch.table; }
-  checkChart(ch);
-  if (ch.type === 'map' && 'layers' in op) for (const L of ch.layers) findTable(st, L.table);
+  try {
+    checkChart(ch);
+    if (ch.type === 'map' && 'layers' in op) for (const L of ch.layers) findTable(st, L.table);
+    if (ch.type === 'track') for (const L of [ch.shape, ...ch.layers, ch.zones, ch.marks].filter(Boolean)) findTable(st, L.table);
+  } catch (e) {
+    // a refused update leaves the chart exactly as it was
+    for (const k of Object.keys(old)) if (k !== 'op' && k !== 'id') { if (old[k] === null) delete ch[k]; else ch[k] = old[k]; }
+    throw e;
+  }
   const what = Object.keys(op).filter((k) => k !== 'op' && k !== 'id');
   const moved = what.every((k) => ['at', 'dx', 'dy', 'w', 'h'].includes(k));
   return { inverse: [old], changes: [{ k: 'chart', action: moved ? 'layout' : 'update', id: ch.id, sheet: sh.name, type: ch.type, fields: what }] };
@@ -854,6 +886,71 @@ export function mapData(st, ch, en = new Engine(st)) {
   }
   return { layers, view: ch.view || null, basemap: ch.basemap || 'dark', follow: ch.follow || null, focus: ch.focus || null, trail: ch.trail !== false };
 }
+/** Track data: the line's points, things on it by distance, zones and marks — any route, not just circuits. */
+export function trackData(st, ch, en = new Engine(st)) {
+  const out = { layout: ch.layout || 'loop', length: ch.length || null, sectors: ch.sectors || null, trail: ch.trail || null, points: null, open: !!ch.shape?.open, layers: [], zones: [], marks: [], errors: [] };
+  const read = (spec) => {
+    let x; try { x = findTable(st, spec.table); } catch (e) { out.errors.push(e.message); return null; }
+    const cols = tableColumns(x.sh, x.R);
+    const idx = (name, re) => { if (name) { try { return colIndex(x.sh, x.R, name); } catch (e) { out.errors.push(e.message); return -2; } } return re ? cols.findIndex((c) => re.test(c.trim())) : -1; };
+    const rows = [];
+    for (let r = x.R.r1 + 1; r <= x.R.r2; r++) {
+      const v = cols.map((_, i) => en.value(x.sh, x.R.c1 + i, r));
+      if (v.every((c) => c == null || c === '')) continue;
+      rows.push({ r, v });
+    }
+    return { x, cols, idx, rows };
+  };
+  if (ch.shape) {
+    const t = read(ch.shape);
+    if (t) {
+      let ix = t.idx(ch.shape.x, /^x$/i), iy = t.idx(ch.shape.y, /^y$/i), geo = false;
+      if (ix < 0 || iy < 0) { const la = t.idx(null, LAT_RE), lo = t.idx(null, LON_RE); if (la >= 0 && lo >= 0) { ix = la; iy = lo; geo = true; } }
+      if (ix < 0 || iy < 0) out.errors.push(`track shape ${ch.shape.table}: needs X and Y columns (or Lat and Lon)`);
+      else {
+        const pts = t.rows.map(({ v }) => [toNum(v[ix]), toNum(v[iy])]).filter(([a, b]) => a != null && b != null);
+        out.points = geo ? pts.map(([la, lo]) => { const s = Math.sin((Math.max(-85, Math.min(85, la)) * Math.PI) / 180); return [((lo + 180) / 360) * 1e6, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 1e6]; }) : pts;
+      }
+    }
+  }
+  ch.layers.forEach((L, li) => {
+    const t = read(L);
+    const layer = { name: L.name || L.table, hidden: !!L.hidden, items: [] };
+    out.layers.push(layer);
+    if (!t) return;
+    const iAt = t.idx(L.at, /^(dist(ance)?|at|pos(ition)?|progress|laps?done|km|m)$/i), iLabel = L.label ? t.idx(L.label) : 0, iColor = t.idx(L.color, /^colou?r$/i), iVal = t.idx(L.value);
+    if (iAt < 0) { out.errors.push(`track layer ${L.table}: which column is the distance? at: "Dist"`); return; }
+    const seen = new Map();
+    for (const { r, v } of t.rows) {
+      const d = toNum(v[iAt]);
+      if (d == null) continue;
+      const label = fmtValue(v[iLabel] ?? '');
+      let key = label || 'row' + (r - t.x.R.r1); const n = (seen.get(key) || 0) + 1; seen.set(key, n); if (n > 1) key += '#' + n;
+      let color = null;
+      if (iColor >= 0) { const c = fmtValue(v[iColor]); color = /^#[0-9a-f]{3,8}$/i.test(c) ? c : condStyle(en, t.x.sh, t.x.R.c1 + iColor, r, v[iColor])?.dot || (c ? hashColor(c) : null); }
+      else for (let i = 0; i < v.length && !color; i++) color = condStyle(en, t.x.sh, t.x.R.c1 + i, r, v[i])?.dot || null;
+      layer.items.push({ key, label, dist: d, color: color || PALETTE[li & 7], value: iVal >= 0 ? fmtValue(v[iVal]) : null, cell: t.x.sh.name + '!' + addr(t.x.R.c1, r) });
+    }
+  });
+  if (ch.zones) {
+    const t = read(ch.zones);
+    if (t) {
+      const iF = t.idx(ch.zones.from, /^(from|start)$/i), iT = t.idx(ch.zones.to, /^(to|end)$/i), iL = ch.zones.label ? t.idx(ch.zones.label) : t.idx(null, /^(name|label|zone)$/i), iC = t.idx(ch.zones.color, /^colou?r$/i);
+      if (iF < 0 || iT < 0) out.errors.push(`track zones ${ch.zones.table}: needs From and To columns`);
+      else for (const { v } of t.rows) { const f = toNum(v[iF]), e = toNum(v[iT]); if (f != null && e != null) out.zones.push({ from: f, to: e, label: iL >= 0 ? fmtValue(v[iL]) : '', color: iC >= 0 && /^#[0-9a-f]{3,8}$/i.test(fmtValue(v[iC])) ? fmtValue(v[iC]) : null }); }
+    }
+  }
+  if (ch.marks) {
+    const t = read(ch.marks);
+    if (t) {
+      const iA = t.idx(ch.marks.at, /^(at|dist(ance)?|pos(ition)?)$/i), iL = ch.marks.label ? t.idx(ch.marks.label) : t.idx(null, /^(name|label|mark|turn)$/i);
+      if (iA < 0) out.errors.push(`track marks ${ch.marks.table}: needs an At column`);
+      else for (const { v } of t.rows) { const a = toNum(v[iA]); if (a != null) out.marks.push({ at: a, label: iL >= 0 ? fmtValue(v[iL]) : '' }); }
+    }
+  }
+  return out;
+}
+
 /** Fit a set of points into w×h (Web Mercator); returns {project(lat,lon)→[x,y], zoom} */
 export function fitMercator(points, w, h, pad = 24) {
   const X = (lon) => (lon + 180) / 360, Y = (lat) => { const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
@@ -872,12 +969,18 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
   const num = (v) => (typeof v === 'number' ? v : typeof v === 'boolean' ? +v : typeof v === 'string' && v.trim() !== '' && !isNaN(+v.replace(',', '.')) ? +v.replace(',', '.') : null);
   if (ch.type === 'viz') {
     const [sn, a] = splitSheet(ch.value);
-    const s2 = findSheet(st, sn ?? sh.name), p = parseAddr(a);
+    const s2 = findSheet(st, sn ?? sh.name), p = parseAddr(a), R = !p && parseRange(a);
     let v = p ? en.value(s2, p.c, p.r) : null;
-    if (v && typeof v === 'object' && 'pack' in v) v = v.value;   // a =VIZ() cell: show its value
-    return { viz: { pack: ch.pack, value: v, text: fmtValue(v), label: ch.label || ch.title || '' } };
+    if (R) { v = []; for (let r = R.r1; r <= R.r2; r++) for (let c = R.c1; c <= R.c2; c++) if (v.length < 12) v.push(en.value(s2, c, r)); }   // a range feeds a multi pack
+    let lim = { min: ch.min, max: ch.max };
+    if (v && typeof v === 'object' && !Array.isArray(v) && 'pack' in v) { if (lim.min == null) lim = { min: v.min, max: v.max }; v = v.value; }
+    // the label can come from a cell: "=Data!C35" (a driver's name, a unit that changes)
+    let label = ch.label || ch.title || '';
+    if (typeof ch.label === 'string' && /^=[^=]/.test(ch.label)) { const [ls, la] = splitSheet(ch.label.slice(1)), lp = parseAddr(la); label = lp ? fmtValue(en.value(findSheet(st, ls ?? sh.name), lp.c, lp.r)) : ''; }
+    return { viz: { pack: ch.pack, value: v, text: Array.isArray(v) ? v.map(fmtValue).join(' · ') : fmtValue(v), label, ...lim } };
   }
   if (ch.type === 'map') return { map: mapData(st, ch, en) };
+  if (ch.type === 'track') return { track: trackData(st, ch, en) };
   if (ch.type === 'kpi') {
     const [sn, a] = splitSheet(ch.value);
     const s2 = findSheet(st, sn ?? sh.name);
@@ -899,7 +1002,8 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
     const cols = tableColumns(x.sh, x.R);
     const xi = ch.x ? colIndex(x.sh, x.R, ch.x) : 0;
     const rows = [];
-    for (let r = x.R.r1 + 1; r <= x.R.r2; r++) { const row = []; for (let c = x.R.c1; c <= x.R.c2; c++) row.push(en.value(x.sh, c, r)); rows.push(row); }
+    const from = ch.last ? Math.max(x.R.r1 + 1, x.R.r2 - ch.last + 1) : x.R.r1 + 1;   // last: a rolling window over an append-only table
+    for (let r = from; r <= x.R.r2; r++) { const row = []; for (let c = x.R.c1; c <= x.R.c2; c++) row.push(en.value(x.sh, c, r)); rows.push(row); }
     let yi = ch.y && ch.y.length ? ch.y.map((n) => colIndex(x.sh, x.R, n)) : cols.map((_, i) => i).filter((i) => i !== xi && rows.some((r) => num(r[i]) !== null));
     return { labels: rows.map((r) => fmtValue(r[xi])), series: yi.map((i) => ({ name: cols[i], values: rows.map((r) => num(r[i])) })) };
   }
@@ -1118,7 +1222,8 @@ function opTable(st, op) {
   const name = validTableName(st, op.name, existing?.t);
   for (const x of tables(st)) if (x.t !== existing?.t && x.sh === sh && intersects(x.R, R)) fail(`Overlaps table "${x.t.name}"`);
   for (const m of sh.merges || []) if (intersects(parseRange(m), R)) fail(`Unmerge ${m} before making a table there`);
-  const inv = preTables(st);
+  // resizing a table in place (a record appended every second…) undoes with its old range — not a snapshot of every table
+  const inv = existing && existing.sh === sh && existing.t.name === name ? { op: 'table', name, range: `${quoteSheet(sh.name)}!${existing.t.range}` } : preTables(st);
   const def = { name, range: rangeToString(R) };
   if (existing && existing.sh === sh) sh.tables[sh.tables.indexOf(existing.t)] = def;
   else {
@@ -1145,6 +1250,7 @@ function opRenameTable(st, op) {
   for (const { ch } of allCharts(st)) {
     if (ch.table && sameName(ch.table, old)) ch.table = x.t.name;
     for (const L of ch.layers || []) if (sameName(L.table, old)) L.table = x.t.name;
+    for (const L of [ch.shape, ch.zones, ch.marks]) if (L && sameName(L.table, old)) L.table = x.t.name;
   }
   return { inverse: [{ op: 'renameTable', name: x.t.name, newName: old }], changes: [{ k: 'table', action: 'rename', name: old, to: x.t.name, sheet: x.sh.name }] };
 }

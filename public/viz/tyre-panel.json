@@ -1,0 +1,29 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "tyre-panel",
+ "kind": "multi",
+ "name": "Tyre panel",
+ "description": "One wheel: temperature and pressure with colored keys, and the tyre life ring. =VIZ(\"tyre-panel\", B2:D2, \"FL tire\").",
+ "inputs": [
+  {
+   "id": "temp",
+   "label": "Temp °C",
+   "min": 60,
+   "max": 130
+  },
+  {
+   "id": "psi",
+   "label": "Pressure psi",
+   "min": 15,
+   "max": 30
+  },
+  {
+   "id": "life",
+   "label": "Life %",
+   "min": 0,
+   "max": 100
+  }
+ ],
+ "svg": "<svg viewBox=\"0 0 220 200\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.h{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;fill:currentColor}.k{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-size:11px;fill:currentColor;opacity:.7}.n{font-size:26px}.u{font-size:13px;opacity:.75}.ln{stroke:currentColor;stroke-opacity:.18}[data-temp=\"0\"] .kt{fill:#2563eb}[data-temp=\"1\"] .kt{fill:#2f7cf6}[data-temp=\"2\"] .kt{fill:#22a6f2}[data-temp=\"3\"] .kt{fill:#14b8a6}[data-temp=\"4\"] .kt{fill:#22c55e}[data-temp=\"5\"] .kt{fill:#22c55e}[data-temp=\"6\"] .kt{fill:#84cc16}[data-temp=\"7\"] .kt{fill:#facc15}[data-temp=\"8\"] .kt{fill:#fb923c}[data-temp=\"9\"] .kt{fill:#f97316}[data-temp=\"10\"] .kt{fill:#ef4444}[data-psi=\"0\"] .kp{fill:#3b82f6}[data-psi=\"1\"] .kp{fill:#3b82f6}[data-psi=\"2\"] .kp{fill:#22a6f2}[data-psi=\"3\"] .kp{fill:#22c55e}[data-psi=\"4\"] .kp{fill:#22c55e}[data-psi=\"5\"] .kp{fill:#22c55e}[data-psi=\"6\"] .kp{fill:#22c55e}[data-psi=\"7\"] .kp{fill:#84cc16}[data-psi=\"8\"] .kp{fill:#facc15}[data-psi=\"9\"] .kp{fill:#fb923c}[data-psi=\"10\"] .kp{fill:#ef4444}.lf{fill:none;stroke-width:6;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc((1 - var(--life)) * 100);transform:rotate(-90deg);transform-origin:110px 148px}[data-life=\"0\"] .lf{stroke:#ef4444}[data-life=\"1\"] .lf{stroke:#ef4444}[data-life=\"2\"] .lf{stroke:#f97316}[data-life=\"3\"] .lf{stroke:#fb923c}[data-life=\"4\"] .lf{stroke:#facc15}[data-life=\"5\"] .lf{stroke:#facc15}[data-life=\"6\"] .lf{stroke:#a3e635}[data-life=\"7\"] .lf{stroke:#4ade80}[data-life=\"8\"] .lf{stroke:#22c55e}[data-life=\"9\"] .lf{stroke:#22c55e}[data-life=\"10\"] .lf{stroke:#22c55e}</style><text x=\"10\" y=\"20\" class=\"h\">{{label}}</text><line x1=\"10\" y1=\"30\" x2=\"210\" y2=\"30\" class=\"ln\"/>\n<rect x=\"10\" y=\"42\" width=\"9\" height=\"9\" rx=\"1.5\" class=\"kt\"/><text x=\"25\" y=\"51\" class=\"k\">Temp</text><rect x=\"118\" y=\"42\" width=\"9\" height=\"9\" rx=\"1.5\" class=\"kp\"/><text x=\"133\" y=\"51\" class=\"k\">Pressure</text>\n<text x=\"10\" y=\"84\" class=\"num n\">{{temp}}<tspan class=\"u\" dx=\"2\">°c</tspan></text><text x=\"118\" y=\"84\" class=\"num n\">{{psi}}<tspan class=\"u\" dx=\"4\">psi</tspan></text>\n<text x=\"110\" y=\"106\" text-anchor=\"middle\" class=\"k\">Life</text><circle class=\"trk\" cx=\"110\" cy=\"148\" r=\"34\" stroke-width=\"6\"/><circle class=\"lf\" cx=\"110\" cy=\"148\" r=\"34\" pathLength=\"100\"/>\n<text x=\"110\" y=\"157\" text-anchor=\"middle\" class=\"num\" style=\"font-size:24px\">{{life}}<tspan style=\"font-size:13px\">%</tspan></text></svg>"
+}

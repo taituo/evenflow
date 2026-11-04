@@ -1,0 +1,11 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "pills",
+ "kind": "range",
+ "name": "Pills",
+ "description": "Six pills that fill from the left, the value beside them (bars of pressure, signal, stock).",
+ "min": 0,
+ "max": 6,
+ "svg": "<svg viewBox=\"0 0 240 52\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.off rect{fill:currentColor;fill-opacity:.14}.on rect{fill:#3b82f6}.mk{fill:#fff;transform-box:fill-box;transform-origin:left center;transform:scaleX(var(--v))}.big{font-size:26px;fill:#3b82f6}.cap{text-anchor:start}</style><defs><mask id=\"pm\"><rect class=\"mk\" x=\"0\" y=\"0\" width=\"160\" height=\"40\"/></mask></defs><g class=\"off\"><rect x=\"4\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"30\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"56\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"82\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"108\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"134\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/></g><g class=\"on\" mask=\"url(#pm)\"><rect x=\"4\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"30\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"56\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"82\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"108\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/><rect x=\"134\" y=\"10\" width=\"22\" height=\"12\" rx=\"6\"/></g>\n<text x=\"176\" y=\"27\" class=\"num big\">{{value}}</text><text x=\"4\" y=\"46\" class=\"cap\" style=\"font-size:11px\">{{label}}</text></svg>"
+}

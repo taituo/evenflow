@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Store, httpErr } from './lib/store.js';
 import { nlsTile, nlsKey } from './lib/tiles.js';
 import { Feeds, describeKinds } from './lib/feeds.js';
+import { Sim } from './lib/sim.js';
 import { TYPES } from './public/shared/types/index.js';
 import { splitSheet } from './public/shared/a1.js';
 import { exportSheet } from './public/shared/export.js';
@@ -36,6 +37,7 @@ export function parseWhen(x, store) {
 
 export function createServer(store) {
   if (!store.feeds) store.feeds = new Feeds(store).start();   // open-data feeds poll into tables
+  if (!store.sim) store.sim = new Sim(store);                  // race / qualifying / practice sessions
   const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
 
   const send = (res, status, body, type) => {
@@ -161,6 +163,11 @@ export function createServer(store) {
       const data = TYPES.sheet.chartData(d, x.sh.name, x.ch);
       if (u.searchParams.get('format') === 'json') return send(res, 200, { ...x.ch, data });
       if (data.kpi) return send(res, 200, `${x.ch.id} kpi "${x.ch.title || ''}": ${data.kpi.text}`);
+      if (data.track) {
+        const t = data.track;
+        return send(res, 200, [`${x.ch.id} track ${t.layout} "${x.ch.title || ''}"${t.trail ? ' trail ' + t.trail : ''}${t.points ? ` · ${t.points.length} shape points` : ''}${t.zones.length ? ` · zones ${t.zones.map((z) => `${z.label} ${z.from}–${z.to}`).join(', ')}` : ''}`,
+          ...t.layers.flatMap((L) => [`layer ${L.name}: ${L.items.length}`, ...L.items.slice(0, 40).map((i) => `  ${i.label}  at ${i.dist}${i.value != null ? '  ' + i.value : ''}`)]), ...t.errors.map((e) => 'error: ' + e)].join('\n'));
+      }
       if (data.viz) return send(res, 200, `${x.ch.id} viz ${data.viz.pack} "${x.ch.title || ''}": ${data.viz.text}`);
       if (data.map) {
         const m = data.map;
@@ -220,6 +227,21 @@ export function createServer(store) {
       const b = await body(req);
       store.selection = { doc: b.doc, sheet: b.sheet, ranges: b.ranges || [], active: b.active, ts: Date.now() };
       send(res, 200, { ok: true });
+    },
+    // session simulator: race / qualifying / practice on the Pitwall dashboard
+    'GET /api/sim': (req, res, u) => {
+      const st = store.sim.status();
+      if (u.searchParams.get('format') === 'json') return send(res, 200, st);
+      send(res, 200, st.session ? `${st.session} [${st.doc}] ${st.running ? 'running' : st.done ? 'finished' : 'stopped'} · t ${st.t}s ×${st.speed} · flag ${st.flag} · seed ${st.seed} · leader ${st.leader} · focus ${st.focus} P${st.position} lap ${st.lap}${st.session === 'race' ? '/' + st.laps : ''}${st.timeLeft != null ? ` · ${Math.ceil(st.timeLeft / 60)} min left` : ''}` : 'no session — cm sim start race');
+    },
+    'POST /api/sim': async (req, res) => {
+      const b = await body(req);
+      try {
+        if (b.action === 'stop') { store.sim.stop(); return send(res, 200, store.sim.status()); }
+        if (b.action === 'focus') return send(res, 200, store.sim.setFocus(b.focus));
+        if (b.action === 'start' || !b.action) return send(res, 200, store.sim.start(b));
+        throw Object.assign(new Error('action: start | stop | focus'), { status: 400 });
+      } catch (e) { throw httpErr(e.status || 400, e.message); }
     },
     // open data feeds (Finnish real-time sources → tables)
     'GET /api/feeds': (req, res, u) => {

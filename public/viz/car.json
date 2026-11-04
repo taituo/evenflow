@@ -1,0 +1,65 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "car",
+ "kind": "multi",
+ "name": "Race car (top view)",
+ "description": "An open-wheel car seen from above: each tyre colored by its temperature, brakes glowing with theirs, livery in any color, the car number on the engine cover. =VIZ(\"car\", B2:J2, \"44\") — fl fr rl rr (tyre °C), flb frb rlb rrb (brake °C), color (#hex).",
+ "inputs": [
+  {
+   "id": "fl",
+   "label": "FL tyre °C",
+   "min": 60,
+   "max": 130
+  },
+  {
+   "id": "fr",
+   "label": "FR tyre °C",
+   "min": 60,
+   "max": 130
+  },
+  {
+   "id": "rl",
+   "label": "RL tyre °C",
+   "min": 60,
+   "max": 130
+  },
+  {
+   "id": "rr",
+   "label": "RR tyre °C",
+   "min": 60,
+   "max": 130
+  },
+  {
+   "id": "flb",
+   "label": "FL brake °C",
+   "min": 100,
+   "max": 1100
+  },
+  {
+   "id": "frb",
+   "label": "FR brake °C",
+   "min": 100,
+   "max": 1100
+  },
+  {
+   "id": "rlb",
+   "label": "RL brake °C",
+   "min": 100,
+   "max": 1100
+  },
+  {
+   "id": "rrb",
+   "label": "RR brake °C",
+   "min": 100,
+   "max": 1100
+  },
+  {
+   "id": "color",
+   "type": "color",
+   "label": "Livery",
+   "value": "#c8102e"
+  }
+ ],
+ "svg": "<svg viewBox=\"0 0 220 430\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.lv{fill:var(--color);transition:fill .6s}.cb{fill:#16171c}.fl{fill:#0f1014}.ac{fill:#fff}.ink{fill:none;stroke:#000;stroke-opacity:.35;stroke-width:2}.arm{stroke:#25272e;stroke-width:3.2;stroke-linecap:round}.hm{fill:#f2f2f2}.no{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-style:italic;font-size:24px;fill:#fff;letter-spacing:-.04em}.tc{transition:fill .6s}.bk{fill:#ff6a1a;transition:opacity .6s;opacity:calc(var(--flb) * 1.25 - .3)}.bk.fr{opacity:calc(var(--frb) * 1.25 - .3)}.bk.rl{opacity:calc(var(--rlb) * 1.25 - .3)}.bk.rr{opacity:calc(var(--rrb) * 1.25 - .3)}\n[data-fl=\"0\"] .ty.fl .tc{fill:#2563eb}[data-fl=\"1\"] .ty.fl .tc{fill:#2f7cf6}[data-fl=\"2\"] .ty.fl .tc{fill:#22a6f2}[data-fl=\"3\"] .ty.fl .tc{fill:#14b8a6}[data-fl=\"4\"] .ty.fl .tc{fill:#22c55e}[data-fl=\"5\"] .ty.fl .tc{fill:#22c55e}[data-fl=\"6\"] .ty.fl .tc{fill:#84cc16}[data-fl=\"7\"] .ty.fl .tc{fill:#facc15}[data-fl=\"8\"] .ty.fl .tc{fill:#fb923c}[data-fl=\"9\"] .ty.fl .tc{fill:#f97316}[data-fl=\"10\"] .ty.fl .tc{fill:#ef4444}[data-fr=\"0\"] .ty.fr .tc{fill:#2563eb}[data-fr=\"1\"] .ty.fr .tc{fill:#2f7cf6}[data-fr=\"2\"] .ty.fr .tc{fill:#22a6f2}[data-fr=\"3\"] .ty.fr .tc{fill:#14b8a6}[data-fr=\"4\"] .ty.fr .tc{fill:#22c55e}[data-fr=\"5\"] .ty.fr .tc{fill:#22c55e}[data-fr=\"6\"] .ty.fr .tc{fill:#84cc16}[data-fr=\"7\"] .ty.fr .tc{fill:#facc15}[data-fr=\"8\"] .ty.fr .tc{fill:#fb923c}[data-fr=\"9\"] .ty.fr .tc{fill:#f97316}[data-fr=\"10\"] .ty.fr .tc{fill:#ef4444}[data-rl=\"0\"] .ty.rl .tc{fill:#2563eb}[data-rl=\"1\"] .ty.rl .tc{fill:#2f7cf6}[data-rl=\"2\"] .ty.rl .tc{fill:#22a6f2}[data-rl=\"3\"] .ty.rl .tc{fill:#14b8a6}[data-rl=\"4\"] .ty.rl .tc{fill:#22c55e}[data-rl=\"5\"] .ty.rl .tc{fill:#22c55e}[data-rl=\"6\"] .ty.rl .tc{fill:#84cc16}[data-rl=\"7\"] .ty.rl .tc{fill:#facc15}[data-rl=\"8\"] .ty.rl .tc{fill:#fb923c}[data-rl=\"9\"] .ty.rl .tc{fill:#f97316}[data-rl=\"10\"] .ty.rl .tc{fill:#ef4444}[data-rr=\"0\"] .ty.rr .tc{fill:#2563eb}[data-rr=\"1\"] .ty.rr .tc{fill:#2f7cf6}[data-rr=\"2\"] .ty.rr .tc{fill:#22a6f2}[data-rr=\"3\"] .ty.rr .tc{fill:#14b8a6}[data-rr=\"4\"] .ty.rr .tc{fill:#22c55e}[data-rr=\"5\"] .ty.rr .tc{fill:#22c55e}[data-rr=\"6\"] .ty.rr .tc{fill:#84cc16}[data-rr=\"7\"] .ty.rr .tc{fill:#facc15}[data-rr=\"8\"] .ty.rr .tc{fill:#fb923c}[data-rr=\"9\"] .ty.rr .tc{fill:#f97316}[data-rr=\"10\"] .ty.rr .tc{fill:#ef4444}</style><defs><linearGradient id=\"tsh\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".22\" stop-color=\"#fff\" stop-opacity=\".22\"/><stop offset=\".5\" stop-color=\"#fff\" stop-opacity=\".05\"/><stop offset=\".8\" stop-color=\"#000\" stop-opacity=\".15\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".6\"/></linearGradient>\n<linearGradient id=\"bsh\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".55\"/><stop offset=\".25\" stop-color=\"#000\" stop-opacity=\".1\"/><stop offset=\".45\" stop-color=\"#fff\" stop-opacity=\".16\"/><stop offset=\".6\" stop-color=\"#000\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".55\"/></linearGradient>\n<linearGradient id=\"nsh\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".45\"/><stop offset=\".4\" stop-color=\"#fff\" stop-opacity=\".2\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".45\"/></linearGradient><filter id=\"bgl\" x=\"-30%\" y=\"-30%\" width=\"160%\" height=\"160%\"><feGaussianBlur stdDeviation=\"5\"/></filter></defs>\n<ellipse class=\"bk fl\" cx=\"58\" cy=\"112\" rx=\"10\" ry=\"16\" filter=\"url(#bgl)\"/><ellipse class=\"bk fr\" cx=\"162\" cy=\"112\" rx=\"10\" ry=\"16\" filter=\"url(#bgl)\"/><ellipse class=\"bk rl\" cx=\"58\" cy=\"362\" rx=\"10\" ry=\"16\" filter=\"url(#bgl)\"/><ellipse class=\"bk rr\" cx=\"162\" cy=\"362\" rx=\"10\" ry=\"16\" filter=\"url(#bgl)\"/>\n<g class=\"ty fl\"><rect class=\"tc\" x=\"20\" y=\"76\" width=\"36\" height=\"72\" rx=\"10.799999999999999\"/><rect x=\"20\" y=\"76\" width=\"36\" height=\"72\" rx=\"10.799999999999999\" fill=\"url(#tsh)\"/><rect x=\"49\" y=\"96.16\" width=\"6\" height=\"31.68\" rx=\"2\" fill=\"#0b0c0f\" opacity=\".85\"/></g><g class=\"ty fr\"><rect class=\"tc\" x=\"164\" y=\"76\" width=\"36\" height=\"72\" rx=\"10.799999999999999\"/><rect x=\"164\" y=\"76\" width=\"36\" height=\"72\" rx=\"10.799999999999999\" fill=\"url(#tsh)\"/><rect x=\"165\" y=\"96.16\" width=\"6\" height=\"31.68\" rx=\"2\" fill=\"#0b0c0f\" opacity=\".85\"/></g><g class=\"ty rl\"><rect class=\"tc\" x=\"14\" y=\"320\" width=\"44\" height=\"82\" rx=\"13.2\"/><rect x=\"14\" y=\"320\" width=\"44\" height=\"82\" rx=\"13.2\" fill=\"url(#tsh)\"/><rect x=\"51\" y=\"342.96\" width=\"6\" height=\"36.08\" rx=\"2\" fill=\"#0b0c0f\" opacity=\".85\"/></g><g class=\"ty rr\"><rect class=\"tc\" x=\"162\" y=\"320\" width=\"44\" height=\"82\" rx=\"13.2\"/><rect x=\"162\" y=\"320\" width=\"44\" height=\"82\" rx=\"13.2\" fill=\"url(#tsh)\"/><rect x=\"163\" y=\"342.96\" width=\"6\" height=\"36.08\" rx=\"2\" fill=\"#0b0c0f\" opacity=\".85\"/></g>\n<!-- floor and sidepods -->\n<path class=\"fl\" d=\"M78 168Q50 176 46 206L42 300Q44 336 76 346L144 346Q176 336 178 300L174 206Q170 176 142 168Z\"/>\n<path class=\"lv\" d=\"M82 176Q62 184 58 210L56 286Q60 316 86 324L134 324Q160 316 164 286L162 210Q158 184 138 176Z\"/>\n<path d=\"M82 176Q62 184 58 210L56 286Q60 316 86 324L134 324Q160 316 164 286L162 210Q158 184 138 176Z\" fill=\"url(#bsh)\"/>\n<path class=\"ink\" d=\"M66 214Q62 200 80 190M154 214Q158 200 140 190\" />\n<path class=\"ac\" d=\"M60 250Q64 300 92 318L96 312Q72 296 68 250Z\" opacity=\".55\"/><path class=\"ac\" d=\"M160 250Q156 300 128 318L124 312Q148 296 152 250Z\" opacity=\".55\"/>\n<!-- suspension -->\n<path d=\"M98 112L50 104\" class=\"arm\"/><path d=\"M98 126L50 116\" class=\"arm\"/><path d=\"M122 112L170 104\" class=\"arm\"/><path d=\"M122 126L170 116\" class=\"arm\"/>\n<path d=\"M92 330L50 356\" class=\"arm\"/><path d=\"M92 344L50 368\" class=\"arm\"/><path d=\"M128 330L170 356\" class=\"arm\"/><path d=\"M128 344L170 368\" class=\"arm\"/>\n<!-- nose and chassis -->\n<path class=\"lv\" d=\"M104 46Q110 36 116 46L126 158Q128 176 124 196H96Q92 176 94 158Z\"/>\n<path d=\"M104 46Q110 36 116 46L126 158Q128 176 124 196H96Q92 176 94 158Z\" fill=\"url(#nsh)\"/>\n<path class=\"ac\" d=\"M108 50h4l3 104h-10z\" opacity=\".9\"/>\n<!-- cockpit, driver, halo -->\n<path d=\"M94 196Q110 186 126 196L128 238Q110 246 92 238Z\" fill=\"#0c0d11\"/>\n<circle cx=\"110\" cy=\"222\" r=\"10.5\" class=\"hm\"/><path d=\"M101 218q9-7 18 0v5q-9 3-18 0z\" fill=\"#101218\"/><path d=\"M103 214q7-6 14 0\" fill=\"none\" stroke=\"#fff\" stroke-opacity=\".45\" stroke-width=\"1.5\"/>\n<path d=\"M92 206Q110 182 128 206\" fill=\"none\" stroke=\"#2c2f37\" stroke-width=\"5\" stroke-linecap=\"round\"/><path d=\"M110 188v14\" stroke=\"#2c2f37\" stroke-width=\"4.5\" stroke-linecap=\"round\"/>\n<!-- airbox, engine cover, fin -->\n<path d=\"M100 240h20l-2 18h-16z\" fill=\"#14151a\"/>\n<path class=\"lv\" d=\"M96 256Q110 250 124 256L120 336Q110 342 100 336Z\"/>\n<path d=\"M96 256Q110 250 124 256L120 336Q110 342 100 336Z\" fill=\"url(#nsh)\"/>\n<path d=\"M110 248v92\" stroke=\"#0e0f13\" stroke-width=\"2.5\"/>\n<text x=\"110\" y=\"304\" text-anchor=\"middle\" class=\"no\">{{label}}</text>\n<!-- rear wing with DRS flap -->\n<path class=\"cb\" d=\"M38 388h144v12H38z\"/><path class=\"lv\" d=\"M38 386h144v4H38z\"/><path class=\"cb\" d=\"M42 402h136v8H42z\" opacity=\".9\"/>\n<path class=\"cb\" d=\"M34 380h7v36h-7zM179 380h7v36h-7z\"/>\n<path class=\"cb\" d=\"M100 346h20l4 40h-28z\"/>\n<!-- front wing: three elements, endplates -->\n<path class=\"cb\" d=\"M14 44Q110 26 206 44L206 52Q110 36 14 52Z\"/>\n<path class=\"lv\" d=\"M16 54Q110 38 204 54L204 59Q110 44 16 59Z\"/>\n<path class=\"cb\" d=\"M18 61Q110 47 202 61L202 66Q110 53 18 66Z\" opacity=\".9\"/>\n<path class=\"cb\" d=\"M10 34h7v38h-7zM203 34h7v38h-7z\"/>\n<path class=\"ac\" d=\"M12 34h3v38h-3zM205 34h3v38h-3z\" opacity=\".5\"/></svg>"
+}

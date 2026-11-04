@@ -599,3 +599,43 @@ body.sv-moving-table, body.sv-moving-table * { cursor: grabbing !important; }
 .lv-rpmenu input, .lv-rpmenu select { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 4px 6px; font: inherit; color-scheme: dark; }
 @media (max-width: 640px) { .lv-rp-cap { display: none; } .lv-rp-ctl { bottom: 64px; } }
 .lv-rp-cap:empty { display: none; }
+
+/* ---------- Live track card ---------- */
+.lv-trackcard { display: flex; flex-direction: column; }
+.lv-trackhost { flex: 1; min-height: 0; position: relative; }
+.lv-trk { width: 100%; height: 100%; display: block; overflow: visible; }
+.trk-road { fill: none; stroke: #16161b; stroke-linejoin: round; }
+.trk-edge { fill: none; stroke: currentColor; stroke-opacity: .07; stroke-linejoin: round; }
+.trk-dots circle { fill: currentColor; opacity: .45; }
+.trk-line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.trk-zone { fill: none; opacity: .55; stroke-linecap: butt; }
+.trk-trail { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.trk-trail-glow { fill: none; opacity: .7; stroke-linecap: round; }
+.trk-mk { fill: #15161b; stroke: currentColor; stroke-opacity: .35; }
+.trk-mkt { fill: currentColor; text-anchor: middle; font-weight: 700; font-family: system-ui; }
+.trk-lead { stroke: currentColor; stroke-opacity: .55; }
+.trk-dot { fill: #fff; opacity: .6; }
+.trk-box { fill: #2b2c33; stroke: currentColor; stroke-opacity: .2; }
+.trk-boxt { fill: #fff; text-anchor: middle; font-weight: 600; font-family: system-ui; }
+.trk-c { stroke: #fff; stroke-opacity: .8; stroke-width: calc(var(--u, 1) * 1.6); filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+.trk-it.lead .trk-c { stroke: #fff; stroke-opacity: 1; stroke-width: calc(var(--u, 1) * 2.6); }
+.trk-ct { fill: #fff; text-anchor: middle; font-weight: 700; font-family: system-ui; letter-spacing: -.02em; pointer-events: none; }
+.ln-grid { stroke: currentColor; stroke-opacity: .25; }
+.ln-tick { stroke: currentColor; stroke-opacity: .35; }
+.ln-lab { fill: currentColor; opacity: .8; font: 600 12px system-ui; text-anchor: middle; }
+.ln-cap { fill: currentColor; font: 700 12px system-ui; letter-spacing: .04em; }
+.ln-zone { opacity: .8; }
+.ln-zt { fill: #fff; font: 700 11px system-ui; text-anchor: middle; }
+.ln-trail { stroke-width: 4; filter: drop-shadow(0 0 6px currentColor); }
+.ln-bub rect { fill: #24252b; stroke: currentColor; stroke-opacity: .25; }
+.ln-bub text { fill: #fff; font: 700 12px system-ui; text-anchor: middle; }
+.lv-ink-dark .trk-road { stroke: #2a2b33; }
+/* visuals fill their card; no empty caption row */
+.lv-vizcard { padding: 10px 12px; }
+.lv-vizcard .lv-label:empty { display: none; }
+.lv-vizcard .lv-vizcap:empty { display: none; }
+.lv-vizcard .lv-vizhost { margin: 2px 0; }
+.lv-trackcard { padding: 12px 14px; }
+.lv-rp-sessions { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.lv-rp-sessions:empty { display: none; }
+.lv-rp-sessions i { width: 100%; font-style: normal; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }

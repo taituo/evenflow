@@ -1,0 +1,23 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "driver",
+ "kind": "multi",
+ "name": "Driver",
+ "description": "A helmet in the team color, the big race number and the name (the label). =VIZ(\"driver\", B2:C2, \"L. Hamilton\") with B2 = number, C2 = #color.",
+ "inputs": [
+  {
+   "id": "num",
+   "label": "Number",
+   "min": 0,
+   "max": 99
+  },
+  {
+   "id": "color",
+   "type": "color",
+   "label": "Color",
+   "value": "#c8102e"
+  }
+ ],
+ "svg": "<svg viewBox=\"0 0 320 150\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.hm{fill:var(--color);transition:fill .6s}.big{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-style:italic;font-size:92px;fill:currentColor;letter-spacing:-.04em}.nm{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:800;font-style:italic;font-size:24px;fill:currentColor;text-transform:uppercase}</style><defs><linearGradient id=\"vs\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#0b0c10\"/><stop offset=\".6\" stop-color=\"#2a2f3a\"/><stop offset=\"1\" stop-color=\"#0b0c10\"/></linearGradient><linearGradient id=\"hs\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#fff\" stop-opacity=\".35\"/><stop offset=\".5\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient></defs>\n<g transform=\"translate(6 18)\"><path class=\"hm\" d=\"M8 70Q8 8 66 6q48 2 52 52v26q0 18-16 22H30Q8 104 8 70z\"/><path d=\"M8 70Q8 8 66 6q48 2 52 52v26q0 18-16 22H30Q8 104 8 70z\" fill=\"url(#hs)\"/><path d=\"M52 44h64v26q-30 6-64-2z\" fill=\"url(#vs)\"/><path d=\"M20 92h90\" stroke=\"#fff\" stroke-opacity=\".7\" stroke-width=\"4\"/><path d=\"M14 60q10-40 54-46\" fill=\"none\" stroke=\"#fff\" stroke-opacity=\".55\" stroke-width=\"5\" stroke-linecap=\"round\"/></g>\n<text x=\"148\" y=\"96\" class=\"big\">{{num}}</text><text x=\"150\" y=\"132\" class=\"nm\">{{label}}</text></svg>"
+}

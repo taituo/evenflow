@@ -1,0 +1,11 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "tyre",
+ "kind": "range",
+ "name": "Tyre",
+ "description": "A tyre seen from above, colored by temperature: blue cold, green in the window, yellow → red hot.",
+ "min": 60,
+ "max": 130,
+ "svg": "<svg viewBox=\"0 0 60 100\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.t{transition:fill .6s}[data-level=\"0\"] .t{fill:#2563eb}[data-level=\"1\"] .t{fill:#2f7cf6}[data-level=\"2\"] .t{fill:#22a6f2}[data-level=\"3\"] .t{fill:#14b8a6}[data-level=\"4\"] .t{fill:#22c55e}[data-level=\"5\"] .t{fill:#22c55e}[data-level=\"6\"] .t{fill:#84cc16}[data-level=\"7\"] .t{fill:#facc15}[data-level=\"8\"] .t{fill:#fb923c}[data-level=\"9\"] .t{fill:#f97316}[data-level=\"10\"] .t{fill:#ef4444}.g{stroke:#000;stroke-opacity:.25;stroke-width:2.2}</style><defs><linearGradient id=\"ts\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".35\"/><stop offset=\".35\" stop-color=\"#fff\" stop-opacity=\".22\"/><stop offset=\".6\" stop-color=\"#fff\" stop-opacity=\"0\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".4\"/></linearGradient></defs>\n<rect class=\"t\" x=\"6\" y=\"4\" width=\"48\" height=\"92\" rx=\"12\"/><path class=\"g\" d=\"M20 10V90M30 8V92M40 10V90\"/><rect x=\"6\" y=\"4\" width=\"48\" height=\"92\" rx=\"12\" fill=\"url(#ts)\"/></svg>"
+}

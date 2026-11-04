@@ -1,0 +1,11 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "bar",
+ "kind": "range",
+ "name": "Gradient bar",
+ "description": "A rounded bar with a cool-to-hot gradient, the value at its end and a caption below.",
+ "min": 0,
+ "max": 100,
+ "svg": "<svg viewBox=\"0 0 240 52\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.f{fill:url(#bg);transform-box:fill-box;transform-origin:left center;transform:scaleX(var(--v))}.big{font-size:26px;fill:#ff8a2a}[data-level=\"0\"] .big,[data-level=\"1\"] .big,[data-level=\"2\"] .big,[data-level=\"3\"] .big{fill:#3b82f6}.cap{text-anchor:start}</style><defs><linearGradient id=\"bg\" gradientUnits=\"userSpaceOnUse\" x1=\"4\" y1=\"0\" x2=\"164\" y2=\"0\"><stop offset=\"0\" stop-color=\"#2f6bff\"/><stop offset=\".5\" stop-color=\"#9b3cff\"/><stop offset=\".8\" stop-color=\"#ff3b5c\"/><stop offset=\"1\" stop-color=\"#ff9a2a\"/></linearGradient><clipPath id=\"bc\"><rect x=\"4\" y=\"11\" width=\"160\" height=\"10\" rx=\"5\"/></clipPath></defs>\n<rect x=\"4\" y=\"11\" width=\"160\" height=\"10\" rx=\"5\" fill=\"currentColor\" fill-opacity=\".14\"/><g clip-path=\"url(#bc)\"><rect class=\"f\" x=\"4\" y=\"11\" width=\"160\" height=\"10\"/></g>\n<text x=\"176\" y=\"27\" class=\"num big\">{{value}}</text><text x=\"4\" y=\"46\" class=\"cap\" style=\"font-size:11px\">{{label}}</text></svg>"
+}

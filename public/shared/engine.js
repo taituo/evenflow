@@ -368,12 +368,15 @@ export const FN = {
   PI: () => Math.PI,
   IMAGE: (en, a, sh) => { need(a, 1, 2); const u = str(en.arg(a[0], sh)).trim(); if (!u) return err(E.VALUE); return new Img(u, a[1] ? num(en.arg(a[1], sh)) : 1); },
   VIZ: (en, a, sh) => {
-    need(a, 2, 3);
+    need(a, 2, 5);
     const p = str(en.arg(a[0], sh)).trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(p)) return err(E.VALUE);
-    const v = en.arg(a[1], sh);
+    const raw = en.ev(a[1], sh);
+    const v = isRange(raw) ? en.flat(raw).slice(0, 12) : en.scalar(raw);   // a range feeds a multi pack (one value per input)
     if (isErr(v)) return v;
-    return new Viz(p, v, a[2] ? str(en.arg(a[2], sh)) : null);
+    if (Array.isArray(v)) { const e = v.find(isErr); if (e) return e; }
+    const lim = (i) => { if (!a[i]) return undefined; const x = en.arg(a[i], sh); return typeof x === 'number' ? x : x != null && x !== '' && !isNaN(+x) ? +x : undefined; };
+    return new Viz(p, v, a[2] ? str(en.arg(a[2], sh)) : null, lim(3), lim(4));
   },
   HYPERLINK: (en, a, sh) => (a[1] ? en.arg(a[1], sh) : en.arg(a[0], sh)),
 };

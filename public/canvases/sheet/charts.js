@@ -2,6 +2,7 @@
 import { isErr } from '../../shared/formula.js';
 import { vizImage, getPack } from './viz-dom.js';
 import { fitMercator } from '../../shared/types/sheet.js';
+import { buildTrack } from '../../shared/track.js';
 
 let redraw = () => {};
 /** The grid calls this so SVG visuals can repaint once their image has loaded. */
@@ -55,6 +56,7 @@ export function drawChart(g, r, ch, data, z, selected, theme = 'light') {
   const area = { x: r.x + pad, y: top, w: r.w - 2 * pad, h: r.y + r.h - pad - top };
   try {
     if (data.map) mapSketch(g, area, data.map, z, f);
+    else if (data.track) trackSketch(g, area, data.track, z, f);
     else if (data.viz) viz(g, area, data.viz, f);
     else if (data.kpi) kpi(g, r, ch, data.kpi, z, f, data.kpi2);
     else if (!data.series.length || !data.labels.length) empty(g, area, f);
@@ -98,6 +100,42 @@ function mapSketch(g, a, m, z, f) {
   g.fillText(`${pts.length} point${pts.length === 1 ? '' : 's'} · the full map is in ▶ Live`, a.x + a.w - 6 * z, a.y + a.h - 4 * z);
 }
 
+/** The grid's picture of a track card: the line, zones, and the moving points where they are now. */
+const SECT = ['#ff2d55', '#ffa21a', '#ff2bd6', '#3ddc97', '#4ea1ff', '#c084fc'];
+const trackCache = new Map();
+function trackSketch(g, a, t, z, f) {
+  const fr = (d) => ((d % 1) + 1) % 1;
+  const items = t.layers.filter((L) => !L.hidden).flatMap((L) => L.items);
+  if (t.layout === 'line') {
+    const y = a.y + a.h / 2, X = (d) => a.x + 10 * z + fr(d) * (a.w - 20 * z);
+    g.strokeStyle = GRID; g.lineWidth = 1; g.beginPath(); g.moveTo(a.x, y); g.lineTo(a.x + a.w, y); g.stroke();
+    for (const zo of t.zones) { g.fillStyle = zo.color || '#16a34a'; g.globalAlpha = 0.5; g.fillRect(X(zo.from), a.y, Math.max(4 * z, X(zo.to) - X(zo.from)), a.h); g.globalAlpha = 1; }
+    for (const it of items) { g.fillStyle = it.color; g.beginPath(); g.arc(X(it.dist), y, 5 * z, 0, 7); g.fill(); }
+    return;
+  }
+  const key = JSON.stringify([t.points, t.open]);
+  let T = trackCache.get(key);
+  if (T === undefined) { T = t.points?.length > 2 ? buildTrack(t.points, { closed: !t.open }) : null; if (trackCache.size > 20) trackCache.clear(); trackCache.set(key, T); }
+  if (!T) return empty(g, a, f, t.errors[0]?.slice(0, 80) || 'no track shape (X, Y points)');
+  const b = T.box, k = Math.min((a.w - 30 * z) / (b.x2 - b.x1 || 1), (a.h - 30 * z) / (b.y2 - b.y1 || 1));
+  const ox = a.x + (a.w - (b.x2 - b.x1) * k) / 2, oy = a.y + (a.h - (b.y2 - b.y1) * k) / 2;
+  const P = (x, y) => [ox + (x - b.x1) * k, oy + (y - b.y1) * k];
+  const line = (f0, f1) => { g.beginPath(); const n = Math.max(2, Math.ceil((f1 - f0) * 300)); for (let i = 0; i <= n; i++) { const p = T.at(f0 + ((f1 - f0) * i) / n); const [x, y] = P(p.x, p.y); i ? g.lineTo(x, y) : g.moveTo(x, y); } };
+  g.lineJoin = g.lineCap = 'round';
+  g.strokeStyle = T.closed && T_BG() ? '#d5dae2' : '#2a2b33'; g.lineWidth = 9 * z; line(0, 1); g.stroke();
+  for (const zo of t.zones) { g.strokeStyle = zo.color || '#22c55e'; g.globalAlpha = 0.6; g.lineWidth = 7 * z; line(fr(zo.from), fr(zo.to) < fr(zo.from) ? fr(zo.to) + 1 : fr(zo.to)); g.stroke(); g.globalAlpha = 1; }
+  const cuts = [0, ...(t.sectors || []), 1];
+  for (let i = 0; i + 1 < cuts.length; i++) { g.strokeStyle = t.sectors ? SECT[i % SECT.length] : '#ff9f1a'; g.lineWidth = 2.2 * z; line(cuts[i], cuts[i + 1]); g.stroke(); }
+  g.font = `700 ${f(8)}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const it of items) {
+    const p = T.at(it.dist), [x, y] = P(p.x, p.y);
+    g.fillStyle = it.color; g.strokeStyle = '#fff'; g.lineWidth = 1.2 * z;
+    g.beginPath(); g.arc(x, y, 7 * z, 0, 7); g.fill(); g.stroke();
+    if (items.length <= 30) { g.fillStyle = '#fff'; g.fillText(it.label.slice(0, 3), x, y + 0.5); }
+  }
+}
+const T_BG = () => !!T.bg;
+
 function empty(g, a, f, msg = 'no numeric data') {
   g.fillStyle = MUTED; g.font = `${f(12)}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(msg, a.x + a.w / 2, a.y + a.h / 2);
@@ -135,7 +173,7 @@ function viz(g, a, d, f) {
   if (!getPack(d.pack)) { empty(g, a, f, `no pack “${d.pack}”`); return; }
   const dpr = globalThis.devicePixelRatio || 1;
   const s = Math.min(a.w, a.h);
-  const img = vizImage(d.pack, d.value, d.label, s * dpr, s * dpr, redraw);
+  const img = vizImage(d.pack, d.value, d.label, s * dpr, s * dpr, redraw, d);
   if (img) g.drawImage(img, a.x + (a.w - s) / 2, a.y + (a.h - s) / 2, s, s);
 }
 
@@ -159,7 +197,11 @@ function axisChart(g, a, ch, data, z, f) {
   const plot = { ...a, h: a.h - (lg ? lg + 6 * z : 0) };
   const vals = data.series.flatMap((s) => s.values).filter((v) => v !== null);
   if (!vals.length) return empty(g, a, f);
-  const sc = nice(Math.min(0, ...vals), Math.max(0, ...vals));
+  // a trace (gradient line/area) or an explicit min/max scales to its data, not from zero
+  const traceLike = (ch.type === 'line' || ch.type === 'area') && Array.isArray(ch.colors) && ch.colors.length >= 2 && ch.axes && ch.axes !== 'all';
+  const lo0 = typeof ch.min === 'number' ? ch.min : traceLike ? Math.min(...vals) : Math.min(0, ...vals);
+  const hi0 = typeof ch.max === 'number' ? ch.max : traceLike ? Math.max(...vals) : Math.max(0, ...vals);
+  const sc = traceLike && typeof ch.min !== 'number' ? (() => { const pad = (hi0 - lo0) * 0.12 || 1; return { lo: lo0 - pad, hi: hi0 + pad, step: (hi0 - lo0 + 2 * pad) / 4 }; })() : nice(lo0, hi0);
   g.font = `${f(11)}px system-ui`;
   const tickW = Math.max(...[sc.lo, sc.hi].map((v) => g.measureText(fmtN(v)).width)) + 8 * z;
   const labelH = f(11) + 8 * z;
@@ -171,12 +213,16 @@ function axisChart(g, a, ch, data, z, f) {
     : { x: plot.x + tickW, y: plot.y + 4 * z, w: plot.w - tickW, h: plot.h - labelH - 4 * z };
   const pos = (v) => (horiz ? P.x + ((v - sc.lo) / (sc.hi - sc.lo)) * P.w : P.y + P.h - ((v - sc.lo) / (sc.hi - sc.lo)) * P.h);
   // grid + ticks
+  const ax = ch.axes || 'all', showY = ax === 'all' || ax === 'y', showX = ax === 'all' || ax === 'x';
+  if (!showY) { P.w += P.x - plot.x; P.x = plot.x; }
+  if (!showX) P.h += labelH;
   g.strokeStyle = GRID; g.lineWidth = 1; g.fillStyle = MUTED;
-  for (let v = sc.lo; v <= sc.hi + sc.step / 2; v += sc.step) {
+  for (let v = sc.lo; v <= sc.hi + sc.step / 2 && ax !== 'none'; v += sc.step) {
     const p = Math.round(pos(v)) + 0.5;
     g.beginPath();
     if (horiz) { g.moveTo(p, P.y); g.lineTo(p, P.y + P.h); } else { g.moveTo(P.x, p); g.lineTo(P.x + P.w, p); }
     g.stroke();
+    if (!showY) continue;
     if (horiz) { g.textAlign = 'center'; g.textBaseline = 'top'; g.fillText(fmtN(v), p, P.y + P.h + 4 * z); }
     else { g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillText(fmtN(v), P.x - 6 * z, p); }
   }
@@ -186,7 +232,7 @@ function axisChart(g, a, ch, data, z, f) {
   g.fillStyle = MUTED;
   const every = horiz ? Math.max(1, Math.ceil((f(11) + 2) / band)) : Math.max(1, Math.ceil((maxLabelW + 8 * z) / band));
   data.labels.forEach((l, i) => {
-    if (i % every) return;
+    if (i % every || !showX) return;
     const c = (horiz ? P.y : P.x) + band * (i + 0.5);
     if (horiz) { g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillText(ellipsize(g, l, catW - 6 * z), P.x - 6 * z, c); }
     else { g.textAlign = 'center'; g.textBaseline = 'top'; g.fillText(ellipsize(g, l, band * every - 4 * z), c, P.y + P.h + 4 * z); }
@@ -206,9 +252,34 @@ function axisChart(g, a, ch, data, z, f) {
       });
     });
   } else {
+    // colors: ["#ff2d55", "#7b2cff"] → a gradient line over a fading gradient fill (a telemetry trace)
+    const grad = Array.isArray(ch.colors) && ch.colors.length >= 2 && ch.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c)) ? ch.colors : null;
+    const lineFill = (pts) => {
+      const top = Math.min(...pts.filter(Boolean).map((p) => p[1]));
+      const lg = g.createLinearGradient(P.x, 0, P.x + P.w, 0);
+      grad.forEach((c, i) => lg.addColorStop(i / (grad.length - 1), c));
+      const fg = g.createLinearGradient(0, top, 0, zero);
+      fg.addColorStop(0, grad[0] + 'cc'); fg.addColorStop(0.55, grad[grad.length - 1] + '66'); fg.addColorStop(1, grad[grad.length - 1] + '00');
+      return { lg, fg };
+    };
     data.series.forEach((s, j) => {
       const col = SER[j % SER.length];
       const pts = s.values.map((v, i) => (v === null ? null : [P.x + band * (i + 0.5), pos(v)]));
+      if (grad && j === 0 && pts.some(Boolean)) {
+        const { lg, fg } = lineFill(pts);
+        if (ch.type === 'area') {
+          g.fillStyle = fg; g.beginPath();
+          let started = false, lastX = 0;
+          pts.forEach((p) => { if (!p) return; if (!started) { g.moveTo(p[0], zero); started = true; } g.lineTo(p[0], p[1]); lastX = p[0]; });
+          g.lineTo(lastX, zero); g.closePath(); g.fill();
+        }
+        g.strokeStyle = lg; g.lineWidth = Math.max(1.5, 2.2 * z); g.lineJoin = 'round';
+        g.shadowColor = grad[0]; g.shadowBlur = 8 * z;
+        g.beginPath(); let pen = false;
+        for (const p of pts) { if (!p) { pen = false; continue; } if (pen) g.lineTo(...p); else { g.moveTo(...p); pen = true; } }
+        g.stroke(); g.shadowBlur = 0;
+        return;
+      }
       if (ch.type === 'area') {
         g.fillStyle = col + '33';
         g.beginPath();

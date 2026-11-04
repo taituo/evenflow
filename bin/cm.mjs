@@ -81,6 +81,7 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm replay --from 09:00 [--to 12:00] [--speed 360] [--loop] [--no-gaps] [--screen tv]   play back what changed, with a clock
   cm replay ls --from -2h          what a replay would show ·  cm replay pause|play|next|prev|stop   (from: 14:30, -2h, v120, m3, ISO)
   cm feed kinds | add trains --map [--every 30 --bbox 24,60,25.5,60.5] | ls | run|pause|resume|rm ID   Finnish open data → tables
+  cm sim start race|qualifying|practice [--laps 20 --speed 4 --focus HAM] · focus LEC · stop · status   race weekend on the Pitwall dashboard
   cm config [nls-key KEY]          server settings (a free NLS key enables the Finnish aerial / topo maps)
   cm screens                       open Live views (TV, laptop…) — target one with --screen id
   cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
@@ -384,6 +385,22 @@ switch (cmd) {
     if (sub === 'pause' || sub === 'resume') { await call('POST', '/api/feeds/set', { id: args[1], on: sub === 'resume' }); out('ok'); break; }
     if (sub === 'rm') { await call('DELETE', '/api/feeds?' + qs({ id: args[1] })); out('ok (the table stays)'); break; }
     out('cm feed [ls] | kinds | add KIND [--map …] | run ID | pause ID | resume ID | rm ID');
+    break;
+  }
+  case 'sim': {
+    // sessions on the Pitwall dashboard: cm sim start race [--laps 20 --speed 4 --focus HAM --seed 7] · start practice --minutes 15 · start qualifying · focus LEC · stop · status
+    const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
+    const sub = args[0] || 'status';
+    if (sub === 'status') { out(await call('GET', '/api/sim')); break; }
+    if (sub === 'stop') { await call('POST', '/api/sim', { action: 'stop' }); out('ok'); break; }
+    if (sub === 'focus') { await call('POST', '/api/sim', { action: 'focus', focus: args[1] }); out('ok — following ' + args[1]); break; }
+    if (sub === 'start') {
+      const o = { action: 'start', session: args[1] || 'race', laps: flag('laps'), minutes: flag('minutes'), speed: flag('speed'), focus: flag('focus'), seed: flag('seed'), doc: flag('doc') };
+      const r = JSON.parse(await call('POST', '/api/sim', o));
+      out(`ok — ${r.session} on "${r.doc}" (open ${BASE}/?live=Pitwall#${r.doc}); following ${r.focus}. Replay later: cm replay --from m… (each session is a milestone)`);
+      break;
+    }
+    out('cm sim start race|qualifying|practice [--laps 20 --minutes 15 --speed 4 --focus HAM] · focus CODE · stop · status');
     break;
   }
   case 'config': {

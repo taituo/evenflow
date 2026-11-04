@@ -294,7 +294,7 @@ export function mount(root, ctx) {
   function drawVizCell(v, x, y, w, h) {
     // the pack's picture fills the cell height; text cells beside it stay readable
     const s = Math.max(8, Math.min(w, h) - 4);
-    const img = getPack(v.pack) ? vizImage(v.pack, v.value, v.label, s * dpr, s * dpr, requestDraw) : null;
+    const img = getPack(v.pack) ? vizImage(v.pack, v.value, v.label, s * dpr, s * dpr, requestDraw, v) : null;
     if (img) {
       const pr = img.naturalWidth / img.naturalHeight || 1;
       const dw = Math.min(w - 4, s * pr), dh = dw / pr;

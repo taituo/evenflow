@@ -1,6 +1,6 @@
 // SVG packs in the browser: a strict sanitizer, shadow-DOM mounting (pack styles can't leak into the page),
 // cross-fading states, and cached <img> renderings for the canvas grid.
-import { resolve, renderString } from '../../shared/viz.js';
+import { resolve, renderString, PLACEHOLDER, placeholder, rootVars } from '../../shared/viz.js';
 
 // ------------------------------------------------------------------ registry (filled by app.js from /api/viz)
 const packs = new Map();
@@ -54,7 +54,7 @@ export function sanitizeSvg(text) {
     if (el.localName === 'style') el.textContent = cleanCss(el.textContent);
   };
   walk(root);
-  for (const a of [...root.attributes]) if (!ATTR.has(a.name) && a.name !== 'xmlns' && a.name !== 'xmlns:xlink') root.removeAttribute(a.name);
+  for (const a of [...root.attributes]) if (!ATTR.has(a.name) && a.name !== 'xmlns' && a.name !== 'xmlns:xlink' && !/^data-[a-z0-9-]{1,30}$/.test(a.name)) root.removeAttribute(a.name);
   return document.importNode(root, true);
 }
 
@@ -66,7 +66,7 @@ const HOST_CSS = `:host{display:block;position:relative;width:100%;height:100%;c
 svg *{transition:fill .5s ease,stroke .5s ease,opacity .5s ease,transform .7s cubic-bezier(.2,.8,.2,1),stroke-dashoffset .7s cubic-bezier(.2,.8,.2,1)}`;
 
 /** Show `value` with pack `packId` inside host. Re-calls update in place: range/toggle values glide (CSS transitions), states cross-fade. */
-export function renderViz(host, packId, value, label) {
+export function renderViz(host, packId, value, label, o = {}) {
   const pack = getPack(packId);
   let root = host.shadowRoot;
   if (!root) { root = host.attachShadow({ mode: 'open' }); root.innerHTML = `<style>${HOST_CSS}</style>`; }
@@ -74,7 +74,7 @@ export function renderViz(host, packId, value, label) {
     if (host.__vizKey !== 'missing:' + packId) { root.innerHTML = `<style>${HOST_CSS}</style><div class="f" style="display:grid;place-items:center;font:12px system-ui;opacity:.7">no pack “${String(packId).replace(/[<>&]/g, '')}”</div>`; host.__vizKey = 'missing:' + packId; }
     return;
   }
-  const r = resolve(pack, value, label);
+  const r = resolve(pack, value, label, o);
   const key = `${pack.id}@${pack.rev || 0}`;
   if (host.__vizKey !== key) { root.innerHTML = `<style>${HOST_CSS}</style>`; host.__vizKey = key; host.__frames = new Map(); }
   const frames = host.__frames;
@@ -90,19 +90,16 @@ export function renderViz(host, packId, value, label) {
     f.append(svg);
     f.__tpl = [];
     const tw = document.createTreeWalker(svg, NodeFilter.SHOW_TEXT);
-    for (let n = tw.nextNode(); n; n = tw.nextNode()) if (/\{\{\s*(value|pct|label|state)\s*\}\}/.test(n.nodeValue)) f.__tpl.push([n, n.nodeValue]);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) if (/\{\{\s*[a-z][a-z0-9]*(\.pct)?\s*\}\}/.test(n.nodeValue)) f.__tpl.push([n, n.nodeValue]);
     root.append(f);
     frames.set(fkey, f);
     requestAnimationFrame(() => f.classList.remove('off'));
   }
   const svg = f.firstElementChild;
-  svg.style.setProperty('--v', +r.v.toFixed(4));
-  svg.style.setProperty('--pct', r.pct);
-  svg.style.setProperty('--level', r.level);
-  svg.setAttribute('data-state', r.state);
-  svg.setAttribute('data-level', r.level);
-  const esc = { value: r.text, pct: String(r.pct), label: String(r.label ?? ''), state: r.state };
-  for (const [node, tpl] of f.__tpl) node.nodeValue = tpl.replace(/\{\{\s*(value|pct|label|state)\s*\}\}/g, (_, k) => esc[k]);
+  const { vars, attrs } = rootVars(r);
+  for (const [k, v] of vars) svg.style.setProperty(k, v);
+  for (const [k, v] of attrs) svg.setAttribute(k, v);
+  for (const [node, tpl] of f.__tpl) node.nodeValue = tpl.replace(PLACEHOLDER, (m, k, pct) => placeholder(r, k, !!pct) ?? m);
   for (const [k, other] of frames) other.classList.toggle('off', k !== fkey);
   host.dataset.state = r.state;
 }
@@ -110,15 +107,15 @@ export function renderViz(host, packId, value, label) {
 // ------------------------------------------------------------------ canvas: cached images of the final SVG
 const imgCache = new Map();
 /** Image (or null while loading) of pack at value; onload called once when it becomes ready. */
-export function vizImage(packId, value, label, w, h, onload) {
+export function vizImage(packId, value, label, w, h, onload, o = {}) {
   const pack = getPack(packId);
   if (!pack) return null;
   const W = Math.max(16, Math.round(w)), H = Math.max(16, Math.round(h));
-  const k = `${pack.id}|${pack.rev || 0}|${String(value)}|${label ?? ''}|${W}x${H}`;
+  const k = `${pack.id}|${pack.rev || 0}|${String(value)}|${label ?? ''}|${o.min ?? ''}-${o.max ?? ''}|${W}x${H}`;
   let e = imgCache.get(k);
   if (!e) {
     if (imgCache.size > 600) imgCache.clear();
-    const url = vizDataUrl(pack, value, label, W, H);
+    const url = vizDataUrl(pack, value, label, W, H, o);
     e = { img: new Image(), ok: false };
     if (url) {
       e.img.onload = () => { e.ok = true; onload?.(); };
@@ -130,8 +127,8 @@ export function vizImage(packId, value, label, w, h, onload) {
 }
 
 /** data: URL of the sanitized, filled SVG — for <img> previews and the canvas. */
-export function vizDataUrl(pack, value, label, w = 120, h = 120) {
-  const el = sanitizeSvg(renderString(pack, value, label, w, h));
+export function vizDataUrl(pack, value, label, w = 120, h = 120, o) {
+  const el = sanitizeSvg(renderString(pack, value, label, w, h, o));
   if (!el) return null;
   el.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(el));
@@ -139,6 +136,7 @@ export function vizDataUrl(pack, value, label, w = 120, h = 120) {
 /** A value that shows each pack at its best in a preview. */
 export function sampleValues(pack) {
   if (pack.kind === 'range') return [pack.min + (pack.max - pack.min) * 0.72];
+  if (pack.kind === 'multi') return [pack.inputs.map((x, i) => x.min + (x.max - x.min) * [0.3, 0.55, 0.75, 0.9, 0.45, 0.65][i % 6])];
   if (pack.kind === 'toggle') return [1, 0];
   return pack.states.map((s) => (s.when === 'any' ? '?' : Array.isArray(s.value) ? s.value[0] : s.value ?? ''));
 }

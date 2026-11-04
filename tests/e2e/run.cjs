@@ -808,6 +808,38 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await ops([{ op: 'deleteSheet', sheet: 'Geo' }]);
   });
 
+  // ================================================================ race weekend: the Pitwall dashboard
+  await t('pitwall: a simulated race drives the car, tyres, gauges, track and traces; the session replays', async () => {
+    await api('POST', '/api/sim', { action: 'start', session: 'race', laps: 3, speed: 6, seed: 3 });
+    const P = await page('pitwall', { width: 1920, height: 1080 }, '/?live=Pitwall#race');
+    await until(() => P.locator('.lv-card[data-key="Pitwall::chart:trk"] .trk-it').count().then((n) => n === 22), 20000, '22 cars on the track');
+    eq(await P.locator('.lv-card').count() >= 30, true, 'all the cards');
+    // the car visual: livery from the focus car, tyres colored by temperature
+    const car = await P.locator('.lv-card[data-key="Pitwall::chart:car"] .lv-vizhost').evaluate((h) => { const s = h.shadowRoot.querySelector('svg'); return { color: s.style.getPropertyValue('--color'), fl: s.getAttribute('data-fl'), no: s.textContent.includes('44') }; });
+    eq(car.color.trim(), '#dc0000', 'livery');
+    ok(+car.fl >= 0 && +car.fl <= 10 && car.no, 'tyre level and number: ' + JSON.stringify(car));
+    // cars move along the line
+    const where = () => P.locator('.lv-card[data-key="Pitwall::chart:trk"] .trk-it').first().locator('circle').evaluate((c) => c.getAttribute('cx') + ',' + c.getAttribute('cy'));
+    const a = await where(); await sleep(2500);
+    ok(a !== await where(), 'a car moved along the track');
+    ok(/track loop: Cars 22 · trail HAM/.test(await api('GET', '/api/live')), 'the agent sees the track');
+    // gauges have values; the speed trace has points
+    const rpm = await P.locator('.lv-card[data-key="Pitwall::chart:rpm"] .lv-vizhost').evaluate((h) => h.shadowRoot.querySelector('svg').textContent.trim());
+    ok(/\d/.test(rpm), 'rpm reads a number: ' + rpm);
+    await P.screenshot({ path: path.join(SHOTS, 'pitwall.png') });
+    await api('POST', '/api/sim', { action: 'focus', focus: 'VER' });
+    await until(async () => /trail VER/.test(await api('GET', '/api/live')), 8000, 'following VER');
+    // replay the session so far from its start milestone
+    const m = (await api('GET', '/api/commits?format=json')).filter((c) => /Race start/.test(c.message)).at(-1);
+    await api('POST', '/api/sim', { action: 'stop' });
+    await api('POST', '/api/present', { doc: 'race', replay: { from: m.id, speed: 4 } });
+    await until(() => P.locator('.lv.lv-replaying').count(), 8000, 'replaying the race');
+    await until(async () => / REPLAY .* (playing|ended)/.test(await api('GET', '/api/live')), 8000, 'replay state reported');
+    await P.screenshot({ path: path.join(SHOTS, 'pitwall-replay.png') });
+    await P.keyboard.press('Escape');
+    await P.context().close();
+  });
+
   // ================================================================ hostile content
   await t('HTML in cells, slide text, names and notes is shown as text, never run', async () => {
     const evil = '<img src=x onerror="window.__xss=1">';

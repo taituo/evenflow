@@ -1,0 +1,9 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "pill",
+ "kind": "toggle",
+ "name": "Status pill",
+ "description": "A pill that glows green when on (DRS open, pit lane, online). The label is its text.",
+ "svg": "<svg viewBox=\"0 0 140 56\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.b{fill:currentColor;fill-opacity:.1;stroke:currentColor;stroke-opacity:.25;transition:fill .4s,stroke .4s}[data-state=\"on\"] .b{fill:#16a34a;fill-opacity:.9;stroke:#4ade80;stroke-opacity:1}.g{opacity:0;transition:opacity .4s}[data-state=\"on\"] .g{opacity:.7}.t{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:700;font-size:20px;letter-spacing:.14em;fill:currentColor;opacity:.55}[data-state=\"on\"] .t{fill:#fff;opacity:1}</style><defs><filter id=\"pg\" x=\"-30%\" y=\"-30%\" width=\"160%\" height=\"160%\"><feGaussianBlur stdDeviation=\"6\"/></filter></defs><rect class=\"g\" x=\"12\" y=\"10\" width=\"116\" height=\"36\" rx=\"18\" fill=\"#22c55e\" filter=\"url(#pg)\"/><rect class=\"b\" x=\"12\" y=\"10\" width=\"116\" height=\"36\" rx=\"18\"/><text x=\"70\" y=\"35\" text-anchor=\"middle\" class=\"t\">{{label}}</text></svg>"
+}

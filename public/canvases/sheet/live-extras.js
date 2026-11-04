@@ -7,9 +7,17 @@ probe.width = 96; probe.height = 54;
 const pg = probe.getContext('2d', { willReadFrequently: true });
 
 /** Returns a function (el) -> luminance 0..1 of the background behind el, or null if unknown. */
+// Reading a WebGL canvas back stalls the GPU (seconds on a software renderer), and a shader background drifts slowly:
+// its pixels are read at most every 12 s and reused in between. Images are read from the CPU and are cheap.
+let shaderShot = { at: 0, src: null, vw: 0, vh: 0 };
+/** A new background (theme, slide): read it afresh next time. */
+let resetAt = 0;
+export const resetBackgroundSample = () => { shaderShot = { at: 0, src: null, vw: 0, vh: 0 }; resetAt = performance.now(); };
 export function sampleBackground(bgHost) {
   const src = (bgHost.classList.contains('lv-has-bgimg') && bgHost.querySelector('.lv-bgimg img')) || bgHost.querySelector('.lv-bg canvas');
   if (!src) return () => null;
+  const fresh = src.tagName === 'IMG' || shaderShot.src !== src || performance.now() - shaderShot.at > 12000 || shaderShot.vw !== innerWidth || shaderShot.vh !== innerHeight;
+  if (!fresh) return shaderShot.fn;
   try {
     pg.clearRect(0, 0, probe.width, probe.height);
     const vw = innerWidth, vh = innerHeight;
@@ -21,7 +29,7 @@ export function sampleBackground(bgHost) {
       pg.drawImage(src, ((vw - w) / 2) * probe.width / vw, ((vh - h) / 2) * probe.height / vh, w * probe.width / vw, h * probe.height / vh);
     } else pg.drawImage(src, 0, 0, probe.width, probe.height);
     const data = pg.getImageData(0, 0, probe.width, probe.height).data;
-    return (el) => {
+    const fn = (el) => {
       const r = el.getBoundingClientRect();   // an element or a Range (text extent)
       const x1 = Math.max(0, Math.floor((r.left / vw) * probe.width)), x2 = Math.min(probe.width - 1, Math.ceil((r.right / vw) * probe.width));
       const y1 = Math.max(0, Math.floor((r.top / vh) * probe.height)), y2 = Math.min(probe.height - 1, Math.ceil((r.bottom / vh) * probe.height));
@@ -34,6 +42,8 @@ export function sampleBackground(bgHost) {
       }
       return n ? sum / n : null;
     };
+    if (src.tagName !== 'IMG' && performance.now() - resetAt > 4000) shaderShot = { at: performance.now(), src, vw, vh, fn };   // right after a change, keep reading
+    return fn;
   } catch { return () => null; }   // tainted canvas (cross-origin image) etc.
 }
 
@@ -148,6 +158,10 @@ export function backSide(it, { doc, chartData }) {
   } else if (it.kind === 'kpi') {
     head(it.ch.value, `kpi ${it.ch.id}`);
     h.push(`<div class="lv-back-f">${esc(rawOf(doc, it.ch.value, it.sheet))}</div><div class="lv-back-v">⇒ ${esc(it.data.kpi.text)}</div>`);
+  } else if (it.kind === 'track') {
+    const t = it.data.track, rows = t.layers.flatMap((L) => L.items.map((p) => [L.name, p]));
+    head([it.ch.shape?.table, ...it.ch.layers.map((L) => L.table)].filter(Boolean).map((x) => '@' + x).join(' '), `track ${it.ch.id}`);
+    grid(['layer', 'label', 'distance', 'value', 'cell'], rows.slice(0, 200).map(([L, p], i) => [String(i + 1), { t: L }, { t: p.label }, { t: p.dist }, { t: p.value ?? '' }, { t: p.cell }]));
   } else if (it.kind === 'map') {
     const pts = it.data.map.layers.flatMap((L) => L.points.map((p) => [L.name, p]));
     head(it.ch.layers.map((L) => '@' + L.table).join(' '), `map ${it.ch.id}`);

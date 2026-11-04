@@ -82,6 +82,12 @@ const TOOLS = [
       if (a.action === 'pause' || a.action === 'resume') { await call('POST', '/api/feeds/set', { id: a.id || a.kind, on: a.action === 'resume' }); return 'ok'; }
       await call('DELETE', '/api/feeds?' + qs({ id: a.id || a.kind })); return 'removed (the table stays)';
     } },
+  { name: 'spread_sim', description: 'Race weekend simulator on the "race" workbook (Pitwall dashboard: telemetry, tyres, track map, vitals, speed trace). start a race / qualifying / practice session (each is a milestone, so it can be replayed), follow a car, stop. Telemetry is simulated.', inputSchema: S({ action: { type: 'string', enum: ['start', 'stop', 'focus', 'status'] }, session: { type: 'string', enum: ['race', 'qualifying', 'practice'] }, laps: num('race laps (default 20)'), minutes: num('practice / qualifying length'), speed: num('× real time (default 1)'), focus: str('car code to follow, e.g. HAM'), seed: num('random seed') }, ['action']),
+    async run(a) {
+      if (a.action === 'status') return call('GET', '/api/sim');
+      await call('POST', '/api/sim', a);
+      return (await call('GET', '/api/sim')) + `\nLive: ${BASE}/?live=Pitwall#race`;
+    } },
   { name: 'spread_viz', description: 'SVG visual packs (spread-viz/1): list, read the spec, check or install a pack you wrote, remove one. Show a pack with =VIZ("id", A1) or an addChart {type:"viz", pack, value}.', inputSchema: S({ action: { type: 'string', enum: ['list', 'spec', 'check', 'install', 'remove'] }, pack: { type: 'object', description: 'the pack JSON (check / install)' }, id: str('pack id (remove)') }, ['action']),
     async run(a) {
       if (a.action === 'list') return call('GET', '/api/viz?format=text');

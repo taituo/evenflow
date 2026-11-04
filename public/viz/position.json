@@ -1,0 +1,37 @@
+{
+ "spec": "spread-viz/1",
+ "author": "Spread",
+ "id": "position",
+ "kind": "states",
+ "name": "Position",
+ "description": "P1, P2… in a badge: gold-edged for the podium.",
+ "states": [
+  {
+   "id": "first",
+   "label": "Leader",
+   "when": "=",
+   "value": 1,
+   "svg": "<svg viewBox=\"0 0 120 100\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.p{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:300;font-size:48px;fill:#fff}</style><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"#8e1020\"/><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"none\" stroke=\"#ffd36b\" stroke-width=\"2\"/><text x=\"60\" y=\"66\" text-anchor=\"middle\" class=\"p\">P{{value}}</text></svg>"
+  },
+  {
+   "id": "podium",
+   "label": "Podium",
+   "when": "<=",
+   "value": 3,
+   "svg": "<svg viewBox=\"0 0 120 100\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.p{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:300;font-size:48px;fill:#fff}</style><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"#8e1020\"/><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"none\" stroke=\"#d4d7de\" stroke-width=\"2\"/><text x=\"60\" y=\"66\" text-anchor=\"middle\" class=\"p\">P{{value}}</text></svg>"
+  },
+  {
+   "id": "points",
+   "label": "Points",
+   "when": "<=",
+   "value": 10,
+   "svg": "<svg viewBox=\"0 0 120 100\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.p{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:300;font-size:48px;fill:#fff}</style><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"#5a0f18\"/><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"none\" stroke=\"#5a0f18\" stroke-width=\"2\"/><text x=\"60\" y=\"66\" text-anchor=\"middle\" class=\"p\">P{{value}}</text></svg>"
+  },
+  {
+   "id": "other",
+   "label": "",
+   "when": "any",
+   "svg": "<svg viewBox=\"0 0 120 100\"><style>.cap{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:currentColor;opacity:.7}.num{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:200;fill:currentColor;font-variant-numeric:tabular-nums}.trk{fill:none;stroke:currentColor;stroke-opacity:.12}.p{font-family:'SF Pro Display',Inter,'Segoe UI',system-ui,sans-serif;font-weight:300;font-size:48px;fill:#fff}</style><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"#2a2d35\"/><rect x=\"4\" y=\"4\" width=\"112\" height=\"92\" rx=\"6\" fill=\"none\" stroke=\"#2a2d35\" stroke-width=\"2\"/><text x=\"60\" y=\"66\" text-anchor=\"middle\" class=\"p\">P{{value}}</text></svg>"
+  }
+ ]
+}

@@ -3,7 +3,7 @@
 // sheet's own layout — charts in white, KPIs, named tables (values editable, structure locked), titles.
 import * as PS from '../../vendor/paper-shaders/index.js';
 import { FONTS } from '../../shared/fonts.js';
-import { sampleBackground, findRelations, drawRelations, flip, backSide } from './live-extras.js';
+import { sampleBackground, resetBackgroundSample, findRelations, drawRelations, flip, backSide } from './live-extras.js';
 import { drawChart } from './charts.js';
 import { tables as allTables, chartData, mergeAt, tableColumns, usedRange } from '../../shared/types/sheet.js';
 import { Engine, fmtValue, isImg } from '../../shared/engine.js';
@@ -14,6 +14,7 @@ import { FX, fxText, textOf, vaporRowsOut, vaporRowsIn } from './fx.js';
 import { renderViz, getPack } from './viz-dom.js';
 import { isViz } from '../../shared/engine.js';
 import { mountMap } from './live-map.js';
+import { mountTrack } from './live-track.js';
 import { createReplay, REPLAY_PRESETS } from './live-replay.js';
 
 // Background themes. Each one is a Paper Shaders fragment shader + its parameters.
@@ -30,6 +31,7 @@ export const PRESETS = {
   smoke: { shader: 'smoke', colorBack: '#05060f', colors: ['#7fd1ff', '#ffffff'], noiseScale: 3, noiseIterations: 8, radius: 0.25, thickness: 0.65, innerShape: 0.7, scale: 0.9, speed: 0.4 },
   rays: { shader: 'rays', colorBack: '#000000', colorBloom: '#2a3cff', colors: ['#a600ff6e', '#6200fff0', '#ffffff', '#33fff5'], density: 0.3, spotty: 0.3, midIntensity: 0.4, midSize: 0.2, intensity: 0.8, bloom: 0.4, offsetY: -0.55, speed: 0.5 },
   swirl: { shader: 'swirl', colorBack: '#1a0000', colors: ['#ffd1d1', '#ff8a8a', '#660000'], bandCount: 4, twist: 0.1, center: 0.2, proportion: 0.5, softness: 0, noiseFrequency: 0.4, noise: 0.2, speed: 0.25 },
+  pitwall: { shader: 'mesh', colors: ['#070203', '#2a0508', '#5c0a12', '#0d0304'], distortion: 0.95, swirl: 0.55, speed: 0.12 },
   blobs: { shader: 'metaballs', colorBack: '#05000c', colors: ['#6e33cc', '#ff5500', '#ffc105', '#ffc800', '#f585ff'], count: 10, size: 0.83, speed: 0.5 },
 };
 const C = (x) => PS.getShaderColorFromString(x);
@@ -106,7 +108,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (m) { m.remove(); return; }
     m = document.createElement('div');
     m.className = 'lv-rpmenu';
-    m.innerHTML = `<b>Replay</b>${REPLAY_PRESETS.map((x, i) => `<button class="lv-btn" data-i="${i}">${x.label}</button>`).join('')}
+    m.innerHTML = `<b>Replay</b>${REPLAY_PRESETS.map((x, i) => `<button class="lv-btn" data-i="${i}">${x.label}</button>`).join('')}<div class="lv-rp-sessions"></div>
       <label>From <input type="datetime-local" class="lv-rp-from"></label>
       <label>Speed <select class="lv-rp-speed">${[10, 60, 360, 3600].map((v) => `<option value="${v}"${v === 60 ? ' selected' : ''}>×${v}</option>`).join('')}</select></label>
       <label><input type="checkbox" class="lv-rp-gaps" checked> skip quiet time</label>
@@ -123,6 +125,20 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     });
     m.addEventListener('keydown', (e) => e.stopPropagation());
     root.append(m);
+    // sessions: from one milestone to the next (a race, a practice…), newest first
+    fetch('/api/commits?format=json').then((r) => r.json()).then((list) => {
+      const box = m.querySelector('.lv-rp-sessions');
+      if (!box || !Array.isArray(list) || !list.length) return;
+      const items = list.map((c, i) => ({ c, next: list[i + 1] })).slice(-8).reverse();
+      box.innerHTML = '<i>Between milestones</i>' + items.map(({ c, next }) => `<button class="lv-btn" data-from="${c.id}" data-to="${next ? next.id : ''}" title="${escH(new Date(c.ts).toLocaleString())}">${escH(c.message.slice(0, 34))}</button>`).join('');
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-from]');
+        if (!b) return;
+        e.stopPropagation();
+        m.remove();
+        startReplay({ from: b.dataset.from, to: b.dataset.to || undefined, speed: +m.querySelector('.lv-rp-speed').value, gaps: m.querySelector('.lv-rp-gaps').checked });
+      });
+    }).catch(() => {});
   }
 
   // ------------------------------------------------------------- shader background
@@ -162,6 +178,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     mountedShader = id;
   }
   function applyTheme() {
+    resetBackgroundSample();
     const img = slide?.bg?.image;
     const filter = slide?.bg?.filter || 'none';
     const bgimg = $('.lv-bgimg'), im = bgimg.querySelector('img');
@@ -238,7 +255,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         const vsh = vs ? doc.sheets.find((x) => sameName(x.name, vs)) : s, vp = parseAddr(va);
         if (vsh && vp) light = condStyle(en, vsh, vp.c, vp.r, en.value(vsh, vp.c, vp.r))?.dot;
       }
-      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : ch.type === 'viz' ? 'viz' : ch.type === 'map' ? 'map' : 'chart', ch, data, r, light });
+      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : ch.type === 'viz' ? 'viz' : ch.type === 'map' ? 'map' : ch.type === 'track' ? 'track' : 'chart', ch, data, r, light });
     }
     for (const x of tabs) {
       const r = G.rect(x.R);
@@ -250,7 +267,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         for (let c = x.R.c1; c <= x.R.c2; c++) {
           const A = addr(c, rr), cell = s.cells[A];
           const v = en.value(s, c, rr);
-          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, rr, v)?.dot, viz: isViz(v) ? { pack: v.pack, value: v.value, label: v.label } : null });
+          row.push({ A, raw: cell?.v ?? '', text: fmtValue(v), num: typeof v === 'number', formula: typeof cell?.v === 'string' && cell.v[0] === '=', err: isErr(v), light: condStyle(en, s, c, rr, v)?.dot, viz: isViz(v) ? { pack: v.pack, value: v.value, label: v.label, min: v.min, max: v.max } : null });
         }
         rows.push(row);
       }
@@ -279,7 +296,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   let mode = 'sheet';
   try { mode = localStorage.getItem('spread.liveMode') === 'auto' ? 'auto' : 'sheet'; } catch {}
   const excluded = new Set();
-  const ORDER = { panel: -1, kpi: 0, viz: 0.5, stat: 1, chart: 2, map: 2.5, table: 3, img: 4, slot: 5 };
+  const ORDER = { panel: -1, kpi: 0, viz: 0.5, stat: 1, chart: 2, map: 2.5, track: 2.4, table: 3, img: 4, slot: 5 };
   function autoItems() {
     const out = [];
     for (const s of doc.sheets) {
@@ -361,11 +378,12 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const n = o?.span || (it.kind === 'table' ? (it.cols.length >= 6 ? 3 : it.cols.length >= 4 ? 2 : 1)
       : it.kind === 'chart' ? (it.ch.type !== 'pie' && it.ch.w >= 520 ? 2 : 1)
         : it.kind === 'map' ? 2
+          : it.kind === 'track' ? (it.ch.layout === 'line' ? 2 : 2)
         : it.kind === 'panel' || it.kind === 'slot' ? (it.p || it.sl).span || 1 : 1);
     const min = ['kpi', 'viz', 'stat', 'slot', 'img', 'panel'].includes(it.kind) ? 0.5 : 1;
     return Math.max(min, Math.min(n, cols));
   }
-  const FIXED_H = { kpi: 150, viz: 230, stat: 118, chart: 300, img: 260, slot: 180, map: 440 };
+  const FIXED_H = { kpi: 150, viz: 230, stat: 118, chart: 300, img: 260, slot: 180, map: 440, track: 440 };
   const heightOf = (it) => doc.live?.spans?.[it.key]?.h || (it.kind === 'panel' ? it.p.h : it.kind === 'slot' ? it.sl.h : 0) || FIXED_H[it.kind] || 0;
 
   // ------------------------------------------------------------- rendering (keyed)
@@ -422,12 +440,20 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   const escH = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   // ------------------------------------------------------------- adaptive ink: dark text on light backgrounds, per card
+  // reading the background back from the GPU is expensive (a stall on every call), so it runs at most every 2.5 s:
+  // the background drifts slowly, and a render every second (live data) must not pay for it each time
+  let inkAt = 0, inkLater = 0;
+  function inkSoon() {
+    const wait = 2500 - (performance.now() - inkAt);
+    if (wait <= 0) { inkAt = performance.now(); requestAnimationFrame(adaptInk); }
+    else if (!inkLater) inkLater = setTimeout(() => { inkLater = 0; inkSoon(); }, wait);
+  }
   function adaptInk() {
     // One decision for the whole screen (consistent look), with per-card exceptions only where the background behind
     // a card is clearly on the other side (a bright patch on a dark image, or the reverse).
     const lum = sampleBackground(root);
     const whole = lum(root);
-    if (whole == null) return;
+    if (whole == null) { inkAt = 0; setTimeout(inkSoon, 400); return; }   // the background isn't ready yet: look again soon
     const bright = root.classList.contains('lv-bright') ? whole > 0.5 : whole > 0.56;   // hysteresis
     root.classList.toggle('lv-bright', bright);
     const decide = (el) => {
@@ -461,7 +487,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       t.classList.toggle('lv-ink-dark', L == null ? bright : bright ? !(L < (was ? 0.3 : 0.26)) : L > (was ? 0.66 : 0.72));
     }
   }
-  const inkTimer = setInterval(() => { if (!document.hidden) adaptInk(); }, 1500);
+  const inkTimer = setInterval(() => { if (!document.hidden) inkSoon(); }, 3000);
   const beat = setInterval(() => reportState(), 30000);   // keeps this screen listed for remotes
 
   // ------------------------------------------------------------- slides: views become a presentation
@@ -682,7 +708,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const cards = [...nodes.values()].map((n) => {
         const r = n.el.getBoundingClientRect(), it = n.item;
         const mp = it.kind === 'map' ? it.data.map : null, ms = mp && n.mapv?.state();
-        const summary = mp ? `map ${mp.layers.map((L) => `${L.name}: ${L.points.length} points${L.error ? ' (' + L.error + ')' : ''}`).join(', ')}${ms ? ` · center ${ms.center.lat.toFixed(4)},${ms.center.lng.toFixed(4)} zoom ${ms.zoom}${ms.offline ? ' · offline' : ''}` : ''}${mp.follow ? ' · following ' + mp.follow : ''}${mp.focus ? ' · focus ' + mp.focus : ''}`
+        const tk = it.kind === 'track' ? it.data.track : null;
+        const summary = tk ? `track ${tk.layout}: ${tk.layers.map((L) => `${L.name} ${L.items.length}`).join(', ')}${tk.trail ? ' · trail ' + tk.trail : ''}${tk.errors.length ? ' · ' + tk.errors[0] : ''}` : mp ? `map ${mp.layers.map((L) => `${L.name}: ${L.points.length} points${L.error ? ' (' + L.error + ')' : ''}`).join(', ')}${ms ? ` · center ${ms.center.lat.toFixed(4)},${ms.center.lng.toFixed(4)} zoom ${ms.zoom}${ms.offline ? ' · offline' : ''}` : ''}${mp.follow ? ' · following ' + mp.follow : ''}${mp.focus ? ' · focus ' + mp.focus : ''}`
           : it.kind === 'viz' ? `${it.ch.pack}: ${it.data.viz.text}` : it.kind === 'kpi' ? `= ${it.data.kpi.text}`
           : it.kind === 'stat' ? `${it.label} = ${it.value.text}`
             : it.kind === 'chart' ? `${it.ch.type}: ${it.data.labels.slice(0, 6).map((l, i) => `${l} ${it.data.series.map((s2) => s2.values[i] ?? '∅').join('/')}`).join(', ')}`
@@ -690,7 +717,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
                 : it.kind === 'panel' ? (it.p.text || '').slice(0, 80).replace(/\n/g, ' ')
                   : it.kind === 'slot' ? (it.sl.image ? 'image ' + it.sl.image : 'empty space')
                     : it.kind === 'text' ? it.text.slice(0, 60) : '';
-        const title = it.kind === 'chart' || it.kind === 'kpi' || it.kind === 'viz' || it.kind === 'map' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
+        const title = it.kind === 'chart' || it.kind === 'kpi' || it.kind === 'viz' || it.kind === 'map' || it.kind === 'track' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
         return {
           key: it.key, kind: it.kind, title, summary,
           x: Math.round(r.left - v.left + scroller.scrollLeft), y: Math.round(r.top - v.top + scroller.scrollTop), w: Math.round(r.width), h: Math.round(r.height),
@@ -724,7 +751,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (!card || e.target.closest('[contenteditable="plaintext-only"], .lv-zoom, button, a, .lv-maphost')) return;
     const n = nodes.get(card.dataset.key);
     if (!n) return;
-    if (mode === 'sheet' && !['chart', 'kpi', 'viz', 'map'].includes(n.item.kind)) return;   // sheet layout: only charts float
+    if (mode === 'sheet' && !['chart', 'kpi', 'viz', 'map', 'track'].includes(n.item.kind)) return;   // sheet layout: only charts float
     drag = { n, el: card, kind: rs ? 'resize' : 'move', x0: e.clientX, y0: e.clientY, r0: card.getBoundingClientRect(), id: e.pointerId, touch: e.pointerType === 'touch', active: false, timer: null };
     if (drag.touch) drag.timer = setTimeout(activate, 320);   // long-press on touch, so normal scrolling still works
   });
@@ -904,14 +931,14 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       update(n, it);
       n.item = it;
     }
-    for (const [k, n] of nodes) if (!seen.has(k)) { n.mapv?.destroy(); n.el.remove(); nodes.delete(k); }
+    for (const [k, n] of nodes) if (!seen.has(k)) { n.mapv?.destroy(); n.trackv?.destroy(); n.el.remove(); nodes.delete(k); }
     if (auto && !hflow) masonry(items); else if (!auto) reflow(items);
     observeReveal();
     renderSlideText();
     if (auto && doc.live?.links !== false && !Array.isArray(slide?.cards)) drawRelations(stage, findRelations(items), nodes);
     else stage.querySelector(':scope > svg.lv-links')?.remove();
     for (const n of nodes.values()) { const b = n.el.querySelector(':scope > .lv-back'); if (b) fillBack(n, b, false); }
-    requestAnimationFrame(adaptInk);
+    inkSoon();
     reportState();
     if (focusKey && !nodes.has(focusKey)) setFocus(null, true);
     for (const n of nodes.values()) n.el.classList.toggle('lv-focus', n.item.key === focusKey);
@@ -993,6 +1020,9 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (it.kind === 'chart') {
       el.className = 'lv-card lv-chart';
       el.innerHTML = '<div class="lv-title"></div><canvas></canvas>';
+    } else if (it.kind === 'track') {
+      el.className = 'lv-card lv-trackcard';
+      el.innerHTML = '<div class="lv-label"></div><div class="lv-trackhost"></div>';
     } else if (it.kind === 'map') {
       el.className = 'lv-card lv-mapcard';
       el.innerHTML = '<div class="lv-label"></div><div class="lv-maphost"></div>';
@@ -1064,6 +1094,13 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       else if (!sameShape(prev, it.data)) n.tween = null;
       n.data = it.data;
       if (mode === 'sheet') paintChart(n, it);
+    } else if (it.kind === 'track') {
+      el.querySelector('.lv-label').textContent = it.ch.title || '';
+      if (!n.trackv) {
+        n.trackv = mountTrack(el.querySelector('.lv-trackhost'));
+        new ResizeObserver(() => n.trackv?.resize()).observe(el);
+      }
+      requestAnimationFrame(() => n.trackv?.update(it.data.track));
     } else if (it.kind === 'map') {
       el.querySelector('.lv-label').textContent = it.ch.title || '';
       if (!n.mapv) {
@@ -1076,7 +1113,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       el.querySelector('.lv-label').textContent = it.ch.title || '';
       const host = el.querySelector('.lv-vizhost');
       const before = host.dataset.state;
-      renderViz(host, d.pack, d.value, d.label);
+      renderViz(host, d.pack, d.value, d.label, d);
       const pack = getPack(d.pack);
       const cap = pack?.kind === 'states' ? (pack.states.find((x) => x.id === host.dataset.state)?.label || '') : '';
       el.querySelector('.lv-vizcap').textContent = cap;
@@ -1141,7 +1178,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
           // a =VIZ() cell: the pack's picture, updating in place (values glide, states cross-fade)
           let host = td.querySelector(':scope > .lv-vizcell');
           if (!host) { td.textContent = ''; host = document.createElement('span'); host.className = 'lv-vizcell'; td.append(host); }
-          renderViz(host, c.viz.pack, c.viz.value, c.viz.label);
+          renderViz(host, c.viz.pack, c.viz.value, c.viz.label, c.viz);
           td.title = `${c.viz.pack}: ${c.text}`;
           td.contentEditable = 'false';
           td.dataset.init = 1;
@@ -1425,7 +1462,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
 
   function close() {
     replay.destroy();
-    for (const n of nodes.values()) n.mapv?.destroy();
+    for (const n of nodes.values()) { n.mapv?.destroy(); n.trackv?.destroy(); }
     cancelAnimationFrame(raf);
     cancelAnimationFrame(gov.raf);
     clearTimeout(idle);
