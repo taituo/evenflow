@@ -543,3 +543,59 @@ body.sv-moving-table, body.sv-moving-table * { cursor: grabbing !important; }
 .tbp { display: contents; }
 #toolslot:not([data-page="2"]) .tbp2, #toolslot[data-page="2"] .tbp1 { display: none; }
 .tb.more { font-weight: 700; }
+
+/* ---------- Live map card ---------- */
+.lv-mapcard { display: flex; flex-direction: column; }
+.lv-mapcard .lv-label { position: absolute; z-index: 3; left: 16px; top: 12px; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,.5); }
+.lv-maphost { position: relative; flex: 1; min-height: 0; margin: -1px; border-radius: inherit; overflow: hidden; }
+.lv-mapcard { padding: 0 !important; overflow: hidden; }
+.lv-maphost .maplibregl-canvas { outline: none; }
+.lv-maphost .maplibregl-ctrl-attrib { font-size: 10px; background: rgba(0,0,0,.35); color: rgba(255,255,255,.7); }
+.lv-maphost .maplibregl-ctrl-attrib a { color: inherit; }
+.lv-maphost .maplibregl-ctrl-attrib-button { filter: invert(1); opacity: .6; }
+[data-card=clear] .lv-maphost .maplibregl-canvas { opacity: .88; }
+.lv-mapnote { position: absolute; z-index: 3; right: 12px; top: 10px; font: 500 11px system-ui; color: rgba(255,255,255,.75); pointer-events: none; }
+.lv-mapnote:empty { display: none; }
+.lv-pin { --c: #4ea1ff; position: relative; width: 16px; height: 16px; cursor: pointer; color: #fff; }
+.lv-pin > i { position: absolute; inset: 0; border-radius: 50%; background: var(--c); border: 2px solid rgba(255,255,255,.95); box-shadow: 0 0 0 0 var(--c), 0 2px 8px rgba(0,0,0,.45); transition: background .5s, transform .3s; }
+.lv-pin > span { position: absolute; left: 22px; top: 50%; transform: translateY(-50%); white-space: nowrap; font: 600 12px var(--lv-font, system-ui); text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.5); pointer-events: none; }
+.lv-pin .lv-pinviz { display: none; position: absolute; left: 50%; bottom: 14px; width: 40px; height: 40px; transform: translateX(-50%); pointer-events: none; }
+.lv-pin.has-viz .lv-pinviz { display: block; }
+.lv-pin-in > i { animation: lvPinIn .6s cubic-bezier(.2,1.4,.4,1); }
+.lv-pin-pulse > i { animation: lvPinPulse 1.2s ease-out; }
+.lv-pin-focus { z-index: 5; }
+.lv-pin-focus > i { transform: scale(1.5); box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 35%, transparent), 0 2px 10px rgba(0,0,0,.5); }
+@keyframes lvPinIn { from { transform: scale(0); } }
+@keyframes lvPinPulse { 0% { box-shadow: 0 0 0 0 var(--c); } 100% { box-shadow: 0 0 0 22px transparent; } }
+.lv-mapinfo { position: absolute; z-index: 4; left: 12px; bottom: 12px; max-width: min(320px, 70%); max-height: 60%; overflow: auto; padding: 10px 12px; border-radius: 12px; background: rgba(10,12,24,.72); backdrop-filter: blur(10px); color: #fff; font: 12px system-ui; opacity: 0; transform: translateY(8px); transition: opacity .3s, transform .3s; pointer-events: none; }
+.lv-mapinfo.on { opacity: 1; transform: none; pointer-events: auto; }
+.lv-mapinfo b { display: block; font-size: 14px; }
+.lv-mapinfo small { display: block; opacity: .6; margin-bottom: 6px; }
+.lv-mapinfo div { display: flex; gap: 10px; justify-content: space-between; } .lv-mapinfo div span { opacity: .65; }
+
+/* ---------- Live time replay ---------- */
+.lv-replay { display: none; }
+.lv-replaying .lv-replay { display: block; }
+.lv-replaying .lv-live { display: none; }
+.lv-replaying [contenteditable] { pointer-events: none; }
+.lv-rp-ctl { position: absolute; z-index: 30; left: 50%; bottom: 72px; transform: translateX(-50%); width: min(780px, calc(100vw - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 12px 8px; border-radius: 18px; background: rgba(12,14,30,.6); backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.lv-rp-clock { width: 100%; display: flex; align-items: baseline; gap: 14px; padding: 0 4px; }
+.lv-rp-clock > div { display: flex; flex-direction: column; gap: 2px; }
+.lv-rp-tag { font: 600 11px system-ui; letter-spacing: .16em; color: #ffcf5c; display: flex; gap: 8px; align-items: center; }
+.lv-rp-tag::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #ffcf5c; animation: lv-beat 1.6s infinite; }
+.lv-rp-tag em { font-style: normal; letter-spacing: 0; }
+.lv-rp-time { font: 200 clamp(34px, 4.6vw, 60px)/1 var(--lv-font, "SF Pro Display", Inter, system-ui); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.lv-rp-date { font: 500 13px system-ui; opacity: .75; text-transform: capitalize; }
+.lv-rp-ctl .lv-btn { flex: none; }
+.lv-rp-track { position: relative; flex: 1; height: 26px; cursor: pointer; touch-action: none; }
+.lv-rp-track::before { content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); }
+.lv-rp-fill { position: absolute; left: 0; top: 12px; height: 3px; border-radius: 2px; background: #ffcf5c; }
+.lv-rp-head { position: absolute; top: 7px; width: 13px; height: 13px; margin-left: -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.4); }
+.lv-rp-ticks i { position: absolute; top: 5px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px; background: var(--c); opacity: .85; }
+.lv-rp-cap { flex: 0 1 200px; min-width: 0; font: 12px system-ui; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-rpmenu { position: absolute; z-index: 40; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: min(640px, calc(100vw - 32px)); padding: 12px; border-radius: 16px; background: rgba(12,14,30,.78); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.14); font: 13px system-ui; }
+.lv-rpmenu b { width: 100%; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+.lv-rpmenu label { display: flex; gap: 6px; align-items: center; opacity: .9; }
+.lv-rpmenu input, .lv-rpmenu select { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 4px 6px; font: inherit; color-scheme: dark; }
+@media (max-width: 640px) { .lv-rp-cap { display: none; } .lv-rp-ctl { bottom: 64px; } }
+.lv-rp-cap:empty { display: none; }

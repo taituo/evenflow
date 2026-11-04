@@ -18,6 +18,20 @@ const PORT = +(process.env.PORT || 3210);
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA = path.resolve(process.env.CANVAS_DATA || path.join(ROOT, 'data'));
 
+/** A point in time: epoch ms, ISO, "v123" (that version), "-90m" / "-2h" / "-1d" (ago), "14:30" (today, server time), "m3" (a milestone). */
+export function parseWhen(x, store) {
+  const t = String(x ?? '').trim();
+  if (/^\d{11,}$/.test(t)) return +t;
+  let m = /^-(\d+(?:\.\d+)?)\s*(s|m|min|h|d)$/i.exec(t);
+  if (m) return Date.now() - +m[1] * { s: 1e3, m: 6e4, min: 6e4, h: 36e5, d: 864e5 }[m[2].toLowerCase()];
+  if ((m = /^v(\d+)$/i.exec(t))) { const e = store.fullLog().find((x) => x.v > +m[1]); return e ? e.ts - 1 : Date.now(); }
+  if (/^m\d+$|^last$/i.test(t)) { const c = store.commits.find((x) => x.id === t) || (t === 'last' && store.commits.at(-1)); if (!c) throw httpErr(404, `No milestone "${t}"`); return c.ts; }
+  if ((m = /^(\d{1,2})[:.](\d{2})(?::(\d{2}))?$/.exec(t))) { const d = new Date(); d.setHours(+m[1], +m[2], +(m[3] || 0), 0); return +d; }
+  const d = Date.parse(t);
+  if (!isNaN(d)) return d;
+  throw httpErr(400, `Not a time: "${t}" (use epoch ms, ISO, -2h, 14:30, v120 or m3)`);
+}
+
 export function createServer(store) {
   const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
 
@@ -144,6 +158,13 @@ export function createServer(store) {
       const data = TYPES.sheet.chartData(d, x.sh.name, x.ch);
       if (u.searchParams.get('format') === 'json') return send(res, 200, { ...x.ch, data });
       if (data.kpi) return send(res, 200, `${x.ch.id} kpi "${x.ch.title || ''}": ${data.kpi.text}`);
+      if (data.viz) return send(res, 200, `${x.ch.id} viz ${data.viz.pack} "${x.ch.title || ''}": ${data.viz.text}`);
+      if (data.map) {
+        const m = data.map;
+        return send(res, 200, [`${x.ch.id} map "${x.ch.title || ''}" basemap ${m.basemap}${m.view ? ' view ' + JSON.stringify(m.view) : ' view: fit'}${m.follow ? ' follow ' + m.follow : ''}${m.focus ? ' focus ' + m.focus : ''}`,
+          ...m.layers.flatMap((L) => [`layer ${L.name} (@${L.table})${L.route ? ' route' : ''}${L.hidden ? ' hidden' : ''}: ${L.points.length} points${L.skipped ? `, ${L.skipped} rows without coordinates` : ''}${L.error ? ' — ' + L.error : ''}`,
+            ...L.points.map((p) => `  ${p.label}  ${p.lat}, ${p.lon}  ${p.cell}${p.light ? ' ●' : ''}`)])].join('\n'));
+      }
       send(res, 200, [`${x.ch.id} ${x.ch.type} "${x.ch.title || ''}"`, `label | ${data.series.map((s) => s.name).join(' | ')}`,
         ...data.labels.map((l, i) => `${l} | ${data.series.map((s) => s.values[i] ?? '∅').join(' | ')}`)].join('\n'));
     },
@@ -197,12 +218,35 @@ export function createServer(store) {
       store.selection = { doc: b.doc, sheet: b.sheet, ranges: b.ranges || [], active: b.active, ts: Date.now() };
       send(res, 200, { ok: true });
     },
+    'GET /api/replay': (req, res, u) => {
+      const q = u.searchParams;
+      const r = store.replay({ doc: q.get('doc') || undefined, from: parseWhen(q.get('from'), store), to: q.get('to') ? parseWhen(q.get('to'), store) : undefined });
+      if (q.get('format') === 'json') return send(res, 200, r);
+      const t = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+      const who = new Map();
+      for (const f of r.frames) who.set(f.who || f.by, (who.get(f.who || f.by) || 0) + 1);
+      send(res, 200, [`replay [${r.doc}] ${t(r.from)} → ${t(r.to)} UTC · ${r.frames.length} changes${who.size ? ' by ' + [...who].map(([k, n]) => `${k} ${n}`).join(', ') : ''}${r.note ? ` · starts later: ${r.note}` : ''}`,
+        ...r.frames.slice(0, 40).map((f) => `  ${t(f.ts).slice(11)} v${f.v} ${f.who || f.by}: ${f.label || f.touched.map((x) => (x.sheet ? x.sheet + '!' : '') + x.range).join(', ') || f.ops.map((o) => o.op).join(',')}`),
+        r.frames.length > 40 ? `  … ${r.frames.length - 40} more` : ''].filter(Boolean).join('\n'));
+    },
     'POST /api/present': async (req, res) => {
       const b = await body(req);
       const ACTIONS = ['next', 'prev', 'play', 'pause', 'toggle', 'unfocus'];
       if (b.action && !ACTIONS.includes(b.action)) throw httpErr(400, `action must be one of ${ACTIONS.join(' ')}`);
       if (b.screen && !store.screens.has(String(b.screen))) throw httpErr(404, `No screen "${b.screen}" — see GET /api/screens`);
-      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off, slide: b.slide, action: b.action || null, theme: b.theme || null, screen: b.screen ? String(b.screen) : null });
+      let replay = null;
+      if (b.replay != null) {
+        if (['stop', 'off', false].includes(b.replay)) replay = { stop: true };
+        else {
+          const o = typeof b.replay === 'object' ? b.replay : {};
+          const from = parseWhen(o.from ?? '-1h', store), to = o.to != null ? parseWhen(o.to, store) : Date.now();
+          if (!(from < to)) throw httpErr(400, 'replay: from must be before to');
+          const speed = o.speed ?? 60;
+          if (!(typeof speed === 'number' && speed >= 1 && speed <= 100000)) throw httpErr(400, 'replay.speed: 1…100000 (× real time)');
+          replay = { from, to, speed, gaps: o.gaps !== false, loop: !!o.loop };
+        }
+      }
+      store.emit({ type: 'present', by: b.by || 'agent', doc: b.doc || null, sheet: b.sheet, mode: b.mode, focus: b.focus, off: !!b.off, slide: b.slide, action: b.action || null, theme: b.theme || null, screen: b.screen ? String(b.screen) : null, replay });
       send(res, 200, { ok: true });
     },
     'POST /api/presence': async (req, res) => { const b = await body(req); if (b.leave) store.leavePresence(b.id); else store.touchPresence(b); send(res, 200, { ok: true }); },
@@ -228,7 +272,7 @@ export function createServer(store) {
     'GET /api/screens': (req, res, u) => {
       const list = store.screenList();
       if (u.searchParams.get('format') === 'json') return send(res, 200, list);
-      send(res, 200, list.length ? list.map((L) => `${L.screen}  "${L.name}"  ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet}${L.focus ? ' · focus ' + L.focus : ''}${L.slide ? ' · slide ' + L.slide + (L.playing ? ' ▶' : ' ⏸') : ''} · ${L.cards?.length || 0} cards · ${L.vw}×${L.vh}`).join('\n') : 'no screens: nobody has Live open');
+      send(res, 200, list.length ? list.map((L) => `${L.screen}  "${L.name}"  ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet}${L.focus ? ' · focus ' + L.focus : ''}${L.slide ? ' · slide ' + L.slide + (L.playing ? ' ▶' : ' ⏸') : ''}${L.replay ? ` · replay at ${new Date(L.replay.at).toISOString().slice(11, 19)} UTC ×${L.replay.speed}${L.replay.playing ? ' ▶' : ' ⏸'}` : ''} · ${L.cards?.length || 0} cards · ${L.vw}×${L.vh}`).join('\n') : 'no screens: nobody has Live open');
     },
     'GET /api/live': (req, res, u) => {
       const want = u.searchParams.get('screen');
@@ -237,6 +281,7 @@ export function createServer(store) {
       if (u.searchParams.get('format') === 'json') return send(res, 200, L ? { ...L, screens: list.map((x) => ({ screen: x.screen, name: x.name })) } : { open: false, screens: [] });
       if (!L) return send(res, 200, 'Live mode is not open on any screen');
       const lines = [`Live open on "${L.name}" [${L.screen}] · ${L.mode === 'auto' ? 'combined' : 'sheet ' + L.sheet} · ${L.flow || 'vertical'} · viewport ${L.vw}×${L.vh}${L.focus ? ' · FOCUS ' + L.focus : ''}${L.slide ? ' · SLIDE ' + L.slide : ''}${L.quality && L.quality !== 'full' ? ' · background quality ' + L.quality + ' (slow device)' : ''} · updated ${Math.round((Date.now() - L.ts) / 1000)}s ago`];
+      if (L.replay) { const R = L.replay, T = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19); lines.push(`  REPLAY ${T(R.from)} → ${T(R.to)} UTC · now at ${T(R.at)} · ×${R.speed} · ${R.ended ? 'ended' : R.playing ? 'playing' : 'paused'} · ${R.applied}/${R.changes} changes${R.note ? ' · ' + R.note : ''}`); }
       if (list.length > 1) lines.push(`  (${list.length} screens: ${list.map((x) => x.screen).join(', ')} — ?screen=id for another)`);
       for (const c of L.cards || []) lines.push(`  ${c.visible ? '●' : '○'} ${c.key}  ${c.kind}${c.title ? ` "${c.title}"` : ''}  @${c.x},${c.y} ${c.w}×${c.h}${c.summary ? '  ' + c.summary : ''}`);
       lines.push('(● = on screen now; positions in CSS px of the live canvas)');

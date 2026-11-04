@@ -44,3 +44,6 @@ summary { font-weight: 650; color: var(--muted); font-size: 12px; text-transform
 .empty { color: var(--muted); padding: 10px 2px; line-height: 1.5; } .empty code { color: var(--text); }
 #toast { position: fixed; left: 50%; bottom: 24px; translate: -50% 0; background: #262a52; color: #fff; padding: 10px 16px; border-radius: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 #toast.on { opacity: 1; } #toast.err { background: #8c1d18; }
+.replay { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.replay button { height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 14px; cursor: pointer; }
+.replay button:active { transform: scale(.97); }

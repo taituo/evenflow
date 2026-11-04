@@ -1,6 +1,7 @@
 // Native canvas chart renderer: column, bar, line, area, pie, kpi. No libraries.
 import { isErr } from '../../shared/formula.js';
 import { vizImage, getPack } from './viz-dom.js';
+import { fitMercator } from '../../shared/types/sheet.js';
 
 let redraw = () => {};
 /** The grid calls this so SVG visuals can repaint once their image has loaded. */
@@ -53,7 +54,8 @@ export function drawChart(g, r, ch, data, z, selected, theme = 'light') {
   }
   const area = { x: r.x + pad, y: top, w: r.w - 2 * pad, h: r.y + r.h - pad - top };
   try {
-    if (data.viz) viz(g, area, data.viz, f);
+    if (data.map) mapSketch(g, area, data.map, z, f);
+    else if (data.viz) viz(g, area, data.viz, f);
     else if (data.kpi) kpi(g, r, ch, data.kpi, z, f, data.kpi2);
     else if (!data.series.length || !data.labels.length) empty(g, area, f);
     else if (ch.type === 'pie') pie(g, area, data, z, f);
@@ -65,6 +67,35 @@ export function drawChart(g, r, ch, data, z, selected, theme = 'light') {
   g.lineWidth = selected ? 2 : 1;
   g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
   if (selected) { g.fillStyle = '#1a73e8'; g.fillRect(r.x + r.w - 7, r.y + r.h - 7, 8, 8); }
+}
+
+/** The grid's picture of a map: points (and routes) projected to fit, on a plain chart — Live shows the real map. */
+function mapSketch(g, a, m, z, f) {
+  const layers = m.layers.filter((L) => !L.hidden);
+  const pts = layers.flatMap((L) => L.points);
+  g.fillStyle = T.bg ? '#eef3f8' : 'rgba(255,255,255,.06)';
+  g.beginPath(); g.roundRect?.(a.x, a.y, a.w, a.h, 6 * z); g.fill();
+  g.strokeStyle = T.bg ? '#dde5ee' : 'rgba(255,255,255,.08)'; g.lineWidth = 1;
+  for (let i = 1; i < 6; i++) { const x = a.x + (a.w * i) / 6, y = a.y + (a.h * i) / 6; g.beginPath(); g.moveTo(x, a.y); g.lineTo(x, a.y + a.h); g.moveTo(a.x, y); g.lineTo(a.x + a.w, y); g.stroke(); }
+  const err = m.layers.find((L) => L.error);
+  if (!pts.length) return empty(g, a, f, err ? err.error.slice(0, 80) : 'no points (lat/lon)');
+  const { project } = fitMercator(pts, a.w, a.h, 22 * z);
+  const P = (p) => { const [x, y] = project(p.lat, p.lon); return [a.x + x, a.y + y]; };
+  for (const L of layers) {
+    if (!L.route || L.points.length < 2) continue;
+    g.strokeStyle = L.points[0].color; g.globalAlpha = 0.7; g.lineWidth = 2.5 * z; g.setLineDash([6 * z, 4 * z]);
+    g.beginPath(); L.points.forEach((p, i) => { const [x, y] = P(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 1;
+  }
+  g.font = `600 ${f(11)}px system-ui`; g.textBaseline = 'middle'; g.textAlign = 'left';
+  for (const p of pts) {
+    const [x, y] = P(p);
+    g.fillStyle = p.color; g.strokeStyle = T.bg ? '#fff' : 'rgba(0,0,0,.5)'; g.lineWidth = 2 * z;
+    g.beginPath(); g.arc(x, y, 6 * z, 0, Math.PI * 2); g.fill(); g.stroke();
+    if (pts.length <= 40 && p.label) { g.fillStyle = INK; g.fillText(ellipsize(g, p.label, 120 * z), x + 9 * z, y); }
+  }
+  g.fillStyle = MUTED; g.font = `${f(10)}px system-ui`; g.textAlign = 'right'; g.textBaseline = 'bottom';
+  g.fillText(`${pts.length} point${pts.length === 1 ? '' : 's'} · the full map is in ▶ Live`, a.x + a.w - 6 * z, a.y + a.h - 4 * z);
 }
 
 function empty(g, a, f, msg = 'no numeric data') {

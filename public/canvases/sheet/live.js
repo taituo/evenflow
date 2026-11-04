@@ -13,6 +13,8 @@ import { condStyle } from '../../shared/cond.js';
 import { FX, fxText, textOf, vaporRowsOut, vaporRowsIn } from './fx.js';
 import { renderViz, getPack } from './viz-dom.js';
 import { isViz } from '../../shared/engine.js';
+import { mountMap } from './live-map.js';
+import { createReplay, REPLAY_PRESETS } from './live-replay.js';
 
 // Background themes. Each one is a Paper Shaders fragment shader + its parameters.
 export const PRESETS = {
@@ -69,6 +71,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         <div class="lv-sheets"></div>
         <div class="lv-sep"></div>
         <button class="lv-btn" data-a="slides" title="Slides: turn views into a presentation">▤ Slides</button>
+        <button class="lv-btn" data-a="replay" title="Replay: play back what changed, sped up, with a clock">⏱ Replay</button>
         <button class="lv-btn lv-more" data-a="page2" title="Look &amp; layout: theme, cards, table lines, effects, font…">◐ Look ›</button>
         <button class="lv-btn" data-a="fs" title="Fullscreen">⛶</button>
         <button class="lv-btn" data-a="exit" title="Back to edit mode (Esc)">✎ Edit</button>
@@ -92,6 +95,35 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
   const stage = $('.lv-stage'), scroller = $('.lv-scroll'), bar = $('.lv-bar');
+
+  // ------------------------------------------------------------- time replay (the doc is swapped for a past copy)
+  const replay = createReplay({ root, getDoc: () => doc, setDoc: (d) => { doc = d; }, render: () => render(), report: () => reportState() });
+  const realSubmit = submit;
+  submit = (ops) => { if (replay.active) { ctx.toast?.('Replay: this is the past — ✕ Live to edit', true); return null; } return realSubmit(ops); };
+  function startReplay(o) { return replay.start(o).then((d) => { if (d.note && d.from - d.requested > 60e3) ctx.toast?.('Replay starts later: ' + d.note); if (!d.frames.length) ctx.toast?.('Nothing changed in that time'); }).catch((e) => ctx.toast?.(e.message, true)); }
+  function replayMenu() {
+    let m = root.querySelector('.lv-rpmenu');
+    if (m) { m.remove(); return; }
+    m = document.createElement('div');
+    m.className = 'lv-rpmenu';
+    m.innerHTML = `<b>Replay</b>${REPLAY_PRESETS.map((x, i) => `<button class="lv-btn" data-i="${i}">${x.label}</button>`).join('')}
+      <label>From <input type="datetime-local" class="lv-rp-from"></label>
+      <label>Speed <select class="lv-rp-speed">${[10, 60, 360, 3600].map((v) => `<option value="${v}"${v === 60 ? ' selected' : ''}>×${v}</option>`).join('')}</select></label>
+      <label><input type="checkbox" class="lv-rp-gaps" checked> skip quiet time</label>
+      <button class="lv-btn" data-i="custom">▶ Play</button>`;
+    const pad = (n) => String(n).padStart(2, '0'), d = new Date(Date.now() - 3600e3);
+    m.querySelector('.lv-rp-from').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    m.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      const P = REPLAY_PRESETS[b.dataset.i];
+      const from = P ? (typeof P.from === 'function' ? P.from() : P.from) : +new Date(m.querySelector('.lv-rp-from').value);
+      m.remove();
+      startReplay({ from, speed: +m.querySelector('.lv-rp-speed').value, gaps: m.querySelector('.lv-rp-gaps').checked });
+    });
+    m.addEventListener('keydown', (e) => e.stopPropagation());
+    root.append(m);
+  }
 
   // ------------------------------------------------------------- shader background
   let mount = null, mountedShader = null;
@@ -206,7 +238,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
         const vsh = vs ? doc.sheets.find((x) => sameName(x.name, vs)) : s, vp = parseAddr(va);
         if (vsh && vp) light = condStyle(en, vsh, vp.c, vp.r, en.value(vsh, vp.c, vp.r))?.dot;
       }
-      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : ch.type === 'viz' ? 'viz' : 'chart', ch, data, r, light });
+      items.push({ key: K + 'chart:' + ch.id, sheet: s.name, kind: ch.type === 'kpi' ? 'kpi' : ch.type === 'viz' ? 'viz' : ch.type === 'map' ? 'map' : 'chart', ch, data, r, light });
     }
     for (const x of tabs) {
       const r = G.rect(x.R);
@@ -247,7 +279,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   let mode = 'sheet';
   try { mode = localStorage.getItem('spread.liveMode') === 'auto' ? 'auto' : 'sheet'; } catch {}
   const excluded = new Set();
-  const ORDER = { panel: -1, kpi: 0, viz: 0.5, stat: 1, chart: 2, table: 3, img: 4, slot: 5 };
+  const ORDER = { panel: -1, kpi: 0, viz: 0.5, stat: 1, chart: 2, map: 2.5, table: 3, img: 4, slot: 5 };
   function autoItems() {
     const out = [];
     for (const s of doc.sheets) {
@@ -328,11 +360,12 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     const o = doc.live?.spans?.[it.key];
     const n = o?.span || (it.kind === 'table' ? (it.cols.length >= 6 ? 3 : it.cols.length >= 4 ? 2 : 1)
       : it.kind === 'chart' ? (it.ch.type !== 'pie' && it.ch.w >= 520 ? 2 : 1)
+        : it.kind === 'map' ? 2
         : it.kind === 'panel' || it.kind === 'slot' ? (it.p || it.sl).span || 1 : 1);
     const min = ['kpi', 'viz', 'stat', 'slot', 'img', 'panel'].includes(it.kind) ? 0.5 : 1;
     return Math.max(min, Math.min(n, cols));
   }
-  const FIXED_H = { kpi: 150, viz: 230, stat: 118, chart: 300, img: 260, slot: 180 };
+  const FIXED_H = { kpi: 150, viz: 230, stat: 118, chart: 300, img: 260, slot: 180, map: 440 };
   const heightOf = (it) => doc.live?.spans?.[it.key]?.h || (it.kind === 'panel' ? it.p.h : it.kind === 'slot' ? it.sl.h : 0) || FIXED_H[it.kind] || 0;
 
   // ------------------------------------------------------------- rendering (keyed)
@@ -490,6 +523,13 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   }
   function stopCarousel() { if (cTimer) { clearInterval(cTimer); cTimer = null; root.classList.remove('lv-carousel'); } }
   function remoteAction(a) {
+    if (replay.active && a !== 'unfocus') {
+      if (a === 'next' || a === 'prev') replay.step(a === 'next' ? 1 : -1);
+      else if (a === 'toggle') replay.toggle();
+      else if (a === 'play') replay.play();
+      else if (a === 'pause') replay.pause();
+      return reportState();
+    }
     const hasSlides = slides().length > 0;
     switch (a) {
       case 'next': case 'prev': {
@@ -641,14 +681,16 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const v = scroller.getBoundingClientRect();
       const cards = [...nodes.values()].map((n) => {
         const r = n.el.getBoundingClientRect(), it = n.item;
-        const summary = it.kind === 'viz' ? `${it.ch.pack}: ${it.data.viz.text}` : it.kind === 'kpi' ? `= ${it.data.kpi.text}`
+        const mp = it.kind === 'map' ? it.data.map : null, ms = mp && n.mapv?.state();
+        const summary = mp ? `map ${mp.layers.map((L) => `${L.name}: ${L.points.length} points${L.error ? ' (' + L.error + ')' : ''}`).join(', ')}${ms ? ` · center ${ms.center.lat.toFixed(4)},${ms.center.lng.toFixed(4)} zoom ${ms.zoom}${ms.offline ? ' · offline' : ''}` : ''}${mp.follow ? ' · following ' + mp.follow : ''}${mp.focus ? ' · focus ' + mp.focus : ''}`
+          : it.kind === 'viz' ? `${it.ch.pack}: ${it.data.viz.text}` : it.kind === 'kpi' ? `= ${it.data.kpi.text}`
           : it.kind === 'stat' ? `${it.label} = ${it.value.text}`
             : it.kind === 'chart' ? `${it.ch.type}: ${it.data.labels.slice(0, 6).map((l, i) => `${l} ${it.data.series.map((s2) => s2.values[i] ?? '∅').join('/')}`).join(', ')}`
               : it.kind === 'table' ? `${it.rows.length} rows [${it.cols.join(' | ')}]`
                 : it.kind === 'panel' ? (it.p.text || '').slice(0, 80).replace(/\n/g, ' ')
                   : it.kind === 'slot' ? (it.sl.image ? 'image ' + it.sl.image : 'empty space')
                     : it.kind === 'text' ? it.text.slice(0, 60) : '';
-        const title = it.kind === 'chart' || it.kind === 'kpi' || it.kind === 'viz' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
+        const title = it.kind === 'chart' || it.kind === 'kpi' || it.kind === 'viz' || it.kind === 'map' ? it.ch.title : it.kind === 'table' ? it.name : it.kind === 'panel' ? it.p.title : it.kind === 'stat' ? it.label : '';
         return {
           key: it.key, kind: it.kind, title, summary,
           x: Math.round(r.left - v.left + scroller.scrollLeft), y: Math.round(r.top - v.top + scroller.scrollTop), w: Math.round(r.width), h: Math.round(r.height),
@@ -658,7 +700,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       const body = closing ? { open: false, screen: ctx.screen?.id } : {
         screen: ctx.screen?.id, name: ctx.screen?.name, playing: playing || !!cTimer, slides: slides().length,
         open: true, mode, sheet: sh().name, focus: focusKey, flow: doc.live?.flow || 'vertical', quality: gov.frozen ? 'still' : ['full', 'half', 'low', 'minimal'][gov.level], slide: playing ? slideIdx + 1 : null,
-        vw: Math.round(v.width), vh: Math.round(v.height), scroll: [scroller.scrollLeft, scroller.scrollTop], cards,
+        vw: Math.round(v.width), vh: Math.round(v.height), scroll: [scroller.scrollLeft, scroller.scrollTop], cards, replay: replay.state(),
       };
       ctx.livePresence?.(closing ? null : { mode, sheet: sh().name, focus: focusKey, slide: playing ? slideIdx + 1 : null });
       fetch('/api/live-state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
@@ -679,10 +721,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (e.button > 0 || focusKey) return;
     const rs = e.target.closest('.lv-rs');
     const card = e.target.closest('.lv-card');
-    if (!card || e.target.closest('[contenteditable="plaintext-only"], .lv-zoom, button, a')) return;
+    if (!card || e.target.closest('[contenteditable="plaintext-only"], .lv-zoom, button, a, .lv-maphost')) return;
     const n = nodes.get(card.dataset.key);
     if (!n) return;
-    if (mode === 'sheet' && n.item.kind !== 'chart' && n.item.kind !== 'kpi') return;   // sheet layout: only charts float
+    if (mode === 'sheet' && !['chart', 'kpi', 'viz', 'map'].includes(n.item.kind)) return;   // sheet layout: only charts float
     drag = { n, el: card, kind: rs ? 'resize' : 'move', x0: e.clientX, y0: e.clientY, r0: card.getBoundingClientRect(), id: e.pointerId, touch: e.pointerType === 'touch', active: false, timer: null };
     if (drag.touch) drag.timer = setTimeout(activate, 320);   // long-press on touch, so normal scrolling still works
   });
@@ -862,7 +904,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       update(n, it);
       n.item = it;
     }
-    for (const [k, n] of nodes) if (!seen.has(k)) { n.el.remove(); nodes.delete(k); }
+    for (const [k, n] of nodes) if (!seen.has(k)) { n.mapv?.destroy(); n.el.remove(); nodes.delete(k); }
     if (auto && !hflow) masonry(items); else if (!auto) reflow(items);
     observeReveal();
     renderSlideText();
@@ -951,6 +993,9 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     if (it.kind === 'chart') {
       el.className = 'lv-card lv-chart';
       el.innerHTML = '<div class="lv-title"></div><canvas></canvas>';
+    } else if (it.kind === 'map') {
+      el.className = 'lv-card lv-mapcard';
+      el.innerHTML = '<div class="lv-label"></div><div class="lv-maphost"></div>';
     } else if (it.kind === 'viz') {
       el.className = 'lv-card lv-vizcard';
       el.innerHTML = '<div class="lv-label"></div><div class="lv-vizhost"></div><div class="lv-vizcap"></div>';
@@ -1019,6 +1064,13 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
       else if (!sameShape(prev, it.data)) n.tween = null;
       n.data = it.data;
       if (mode === 'sheet') paintChart(n, it);
+    } else if (it.kind === 'map') {
+      el.querySelector('.lv-label').textContent = it.ch.title || '';
+      if (!n.mapv) {
+        n.mapv = mountMap(el.querySelector('.lv-maphost'), { onMove: () => reportState() });
+        new ResizeObserver(() => n.mapv?.resize()).observe(el);
+      }
+      n.mapv.update(it.data.map, { focused: it.key === focusKey });
     } else if (it.kind === 'viz') {
       const d = it.data.viz;
       el.querySelector('.lv-label').textContent = it.ch.title || '';
@@ -1330,6 +1382,7 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   function syncFx() { root.querySelector('[data-a=fx]').textContent = '⟡ ' + fxKind()[0].toUpperCase() + fxKind().slice(1); }
   syncFx();
   root.querySelector('[data-a=links]').onclick = () => { submit([{ op: 'liveLayout', links: doc.live?.links === false ? null : false }]); render(); };
+  root.querySelector('[data-a=replay]').onclick = () => replayMenu();
   root.querySelector('[data-a=slides]').onclick = () => { root.classList.toggle('lv-slides-open'); renderSlidePanel(); };
   root.querySelector('[data-a=exit]').onclick = close;
   root.querySelector('[data-a=fs]').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen?.());
@@ -1351,6 +1404,11 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   const onKey = (e) => {
     const ae = document.activeElement;
     const typing = root.contains(ae) && (ae.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(ae.tagName));
+    if (replay.active && !typing) {
+      if (e.key === ' ') { e.preventDefault(); replay.toggle(); return; }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); replay.step(e.key === 'ArrowRight' ? 1 : -1); return; }
+      if (e.key === 'Escape') { e.preventDefault(); replay.stop(); return; }
+    }
     if (playing && !typing) {
       if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); next(1); return; }
       if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); next(-1); return; }
@@ -1366,6 +1424,8 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
   addEventListener('resize', onResize);
 
   function close() {
+    replay.destroy();
+    for (const n of nodes.values()) n.mapv?.destroy();
     cancelAnimationFrame(raf);
     cancelAnimationFrame(gov.raf);
     clearTimeout(idle);
@@ -1399,6 +1459,10 @@ export function openLive(ctx, doc, startSheet, { submit, onClose, mode: startMod
     /** Remote control (agent / URL): { sheet?, mode?, focus? } */
     people: showPeople,
     present(o) {
+      if (o.replay) {
+        if (o.replay.stop) replay.stop(); else startReplay(o.replay);
+        if (!o.sheet && !o.mode && !o.focus) return;
+      }
       if (o.action) return remoteAction(o.action);
       if (o.theme && PRESETS[o.theme]) { submit([{ op: 'view', sheet: sh().name, theme: o.theme }]); applyTheme(); }
       if (o.slide) { stopCarousel(); play(Math.max(0, (+o.slide || 1) - 1)); return; }

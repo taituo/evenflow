@@ -40,8 +40,9 @@ function renderScreens() {
   if (!cur()) S.screen = S.screens[0].screen;
   el.innerHTML = S.screens.map((x) => `<button class="pill ${x.screen === S.screen ? 'on' : ''}" data-screen="${esc(x.screen)}">${esc(x.name)}</button>`).join('');
   const c = cur();
-  $('#now').innerHTML = `<div class="nowname">${esc(c.name)}</div><div class="nowwhat">${c.slide ? `Slide ${c.slide}` : c.focus ? 'Focus · ' + esc(c.focus.split('::')[1] || c.focus) : c.mode === 'auto' ? 'Combined' : 'Sheet ' + esc(c.sheet)}${c.playing ? ' · <b>playing</b>' : ''}</div>`;
-  $('[data-act=toggle]').textContent = c.playing ? '❚❚' : '▶';
+  $('#now').innerHTML = `<div class="nowname">${esc(c.name)}</div><div class="nowwhat">${c.slide ? `Slide ${c.slide}` : c.focus ? 'Focus · ' + esc(c.focus.split('::')[1] || c.focus) : c.mode === 'auto' ? 'Combined' : 'Sheet ' + esc(c.sheet)}${c.playing ? ' · <b>playing</b>' : ''}${c.replay ? ` · <b>replay</b> ${new Date(c.replay.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</div>`;
+  const on = c.replay ? c.replay.playing : c.playing;
+  $('[data-act=toggle]').textContent = on ? '❚❚' : '▶';
   $('[data-act=toggle]').classList.toggle('on', !!c.playing);
   renderModes(); renderCards(); renderSlides();
 }
@@ -51,6 +52,17 @@ $('#screens').addEventListener('click', (e) => {
   S.screen = b.dataset.screen;
   try { localStorage.setItem('spread.remote.screen', S.screen); } catch {}
   renderScreens();
+});
+
+// ------------------------------------------------------------------ replay: the screen plays back what changed
+document.querySelector('.replay').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rp]');
+  if (!b || !cur()) return;
+  navigator.vibrate?.(8);
+  const v = b.dataset.rp;
+  if (v === 'stop') return present({ replay: 'stop' });
+  const from = v === 'today' ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; })() : v;
+  present({ replay: { from, speed: v === '-15m' ? 30 : v === '-1h' ? 120 : 600 } });
 });
 
 // ------------------------------------------------------------------ transport

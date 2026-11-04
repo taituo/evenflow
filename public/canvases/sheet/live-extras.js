@@ -148,6 +148,10 @@ export function backSide(it, { doc, chartData }) {
   } else if (it.kind === 'kpi') {
     head(it.ch.value, `kpi ${it.ch.id}`);
     h.push(`<div class="lv-back-f">${esc(rawOf(doc, it.ch.value, it.sheet))}</div><div class="lv-back-v">⇒ ${esc(it.data.kpi.text)}</div>`);
+  } else if (it.kind === 'map') {
+    const pts = it.data.map.layers.flatMap((L) => L.points.map((p) => [L.name, p]));
+    head(it.ch.layers.map((L) => '@' + L.table).join(' '), `map ${it.ch.id}`);
+    grid(['layer', 'label', 'lat', 'lon', 'cell'], pts.slice(0, 200).map(([L, p], i) => [String(i + 1), { t: L }, { t: p.label }, { t: p.lat }, { t: p.lon }, { t: p.cell }]));
   } else if (it.kind === 'viz') {
     head(it.ch.value, `visual “${it.ch.pack}” ${it.ch.id}`);
     h.push(`<div class="lv-back-f">${esc(rawOf(doc, it.ch.value, it.sheet))}</div><div class="lv-back-v">⇒ ${esc(it.data.viz.text)}</div>`);

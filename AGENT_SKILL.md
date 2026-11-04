@@ -123,6 +123,25 @@ cm style lines rows|grid|none             # table cell lines
 cm style chart:status card=glass lines=grid   # one card (keys as in focus); "cm style KEY reset"
 #   = liveLayout {cards, lines, styles:{key:{card,lines}}}
 ```
+Maps (a table with lat/lon columns — or one "coords" column like "60.17, 24.94" — becomes a map card):
+```
+cm map add Places [--route --color Status --pack battery --value Battery --label Name]   # = addChart {type:"map", layers:[…]}
+cm map                                    # every map: layers, points, camera (also cm chart-show ID)
+cm map [ID] fly 60.17 24.94 --zoom 14 [--pitch 45] | fly "Kamppi" | fly fit
+cm map [ID] follow R2 | follow off        # camera follows a moving point; move points with cm update Robots R2 Lat=… Lon=…
+cm map [ID] focus Base | focus off        # highlight a point, show its row
+cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|none | trail off
+```
+Steer the camera only when the user asks or you are presenting. `cm live` reports each map's center and zoom.
+
+Time replay (play back what changed, sped up, with a clock — on the user's Live screen):
+```
+cm replay ls --from -2h                   # what changed in a window (read this before narrating)
+cm replay --from 09:00 [--to 12:00] [--speed 360] [--loop] [--screen tv]   # times: 14:30, -2h, v120, m3, ISO
+cm replay pause | play | next | prev | stop
+```
+While a replay runs the screen shows the past and edits are blocked; your writes still land in the present.
+
 Demo: when the user asks for a demo / tour, run `cm demo --list`, then `cm demo --step N` one at a time (MCP:
 spread_demo), telling the user what to look at. It uses its own workbook "demo".
 

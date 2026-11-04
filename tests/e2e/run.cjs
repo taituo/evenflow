@@ -197,6 +197,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const fit = await L.locator('.lv-bar').evaluate((b) => [b.scrollWidth, b.clientWidth]);
     ok(fit[0] <= fit[1] + 1, 'bar fits at 1440px without scrolling: ' + fit);
     // theme picker: collapsed to the current swatch, opens on click, picks, collapses
+    await bar(L, '[data-a=page2]');   // themes live on the bar's second page
     eq(await L.locator('.lv-themes .lv-dot:visible').count(), 1, 'one swatch visible');
     await bar(L, '.lv-themes .lv-dot.on');
     ok((await L.locator('.lv-themes .lv-dot:visible').count()) > 5, 'theme row open');
@@ -735,6 +736,75 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(500);
     eq(external, [], 'no external request');
     await H.context().close();
+  });
+
+  // ================================================================ maps + time replay
+  await t('map: points from tables glide when moved, routes, the agent flies and focuses; the grid shows a sketch', async () => {
+    await ops([
+      { op: 'addSheet', name: 'Geo' },
+      { op: 'set', sheet: 'Geo', range: 'A1', values: [['Name', 'Lat', 'Lon', 'Status'], ['Alpha', 60.17, 24.94, 'ok'], ['Beta', 60.18, 24.95, 'late'], ['Gamma', 60.16, 24.92, 'ok']] },
+      { op: 'table', sheet: 'Geo', name: 'Geo', range: 'A1:D4' },
+      { op: 'cond', sheet: 'Geo', range: 'D2:D20', rules: [{ when: '=', value: 'late', light: 'red' }] },
+      { op: 'addChart', sheet: 'Geo', id: 'geo', type: 'map', title: 'Geo', basemap: 'none', at: 'F2', layers: [{ table: 'Geo', color: 'Status', route: true }] },
+    ]);
+    const M = await page('map', { width: 1280, height: 800 }, '/?live=Geo#main');
+    await until(() => M.locator('.lv-pin').count().then((n) => n === 3), 20000, 'three pins');
+    const red = await M.locator('.lv-pin', { hasText: 'Beta' }).evaluate((e) => getComputedStyle(e).getPropertyValue('--c').trim());
+    eq(red, '#ea4335', 'a traffic light colors the pin');
+    const at = () => M.locator('.lv-pin', { hasText: 'Alpha' }).evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)]; });
+    const before = await at();
+    await ops([{ op: 'updateRows', table: 'Geo', key: 'Alpha', set: { Lat: 60.175, Lon: 24.93 } }]);
+    await sleep(500);
+    const mid = await at();
+    await sleep(1600);
+    const after = await at();
+    ok(after[0] < before[0] && after[1] < before[1], `moved up-left: ${before} → ${after}`);
+    ok(mid[0] !== after[0] || mid[1] !== after[1], 'it glides (mid-way position differs from the end)');
+    await ops([{ op: 'updateChart', id: 'geo', focus: 'Beta' }]);
+    await until(() => M.locator('.lv-mapinfo.on', { hasText: 'Beta' }).count(), 8000, 'focused point shows its row');
+    ok((await M.locator('.lv-mapinfo').textContent()).includes('late'), 'row values in the popup');
+    await ops([{ op: 'updateChart', id: 'geo', view: { lat: 60.17, lon: 24.94, zoom: 15 } }]);
+    await until(async () => /zoom 1[45]\b/.test(await api('GET', '/api/live')), 15000, 'the camera flew (zoom reported to the agent)');
+    ok(/map Geo: 3 points/.test(await api('GET', '/api/live')), 'cm live describes the map');
+    await M.screenshot({ path: path.join(SHOTS, 'live-map.png') });
+    // grid: a sketch with the same points
+    await M.keyboard.press('Escape');
+    await until(() => M.locator('.lv').count().then((n) => n === 0), 5000, 'left Live');
+    await sleep(400);
+    await M.screenshot({ path: path.join(SHOTS, 'grid-map.png') });
+    await M.context().close();
+  });
+
+  await t('replay: the past comes back, plays forward with a clock; editing is blocked; Esc returns to now', async () => {
+    const t0 = Date.now() - 300;
+    await sleep(2500);
+    for (const s of ['late', 'ok']) { await ops([{ op: 'updateRows', table: 'Geo', key: 'Gamma', set: { Status: s } }]); await sleep(2500); }
+    await ops([{ op: 'updateRows', table: 'Geo', key: 'Beta', set: { Status: 'ok', Lat: 60.165 } }]);
+    const R = await page('replay', { width: 1280, height: 800 }, '/?live=Geo#main');
+    await until(() => R.locator('.lv-table td[data-a="D3"]').textContent().then((x) => x === 'ok'), 10000, 'now: Beta ok');
+    await api('POST', '/api/present', { replay: { from: t0, speed: 1 } });
+    await until(() => R.locator('.lv.lv-replaying').count(), 8000, 'replay mode');
+    await until(() => R.locator('.lv-table td[data-a="D3"]').textContent().then((x) => x === 'late'), 5000, 'the past: Beta was late');
+    ok(/\d{1,2}[:.]\d{2}[:.]\d{2}/.test(await R.locator('.lv-rp-time').textContent()), 'a clock');
+    ok((await R.locator('.lv-rp-date').textContent()).length > 4, 'a date');
+    eq(await R.locator('.lv-rp-ticks i').count(), 3, 'one tick per change on the timeline');
+    await until(async () => / REPLAY .* (playing|ended) .* \d\/3 changes/.test(await api('GET', '/api/live')), 8000, 'the agent sees the replay');
+    await until(() => R.locator('.lv-table td[data-a="D3"]').textContent().then((x) => x === 'ok'), 15000, 'played forward to now');
+    await until(async () => /ended · 3\/3 changes/.test(await api('GET', '/api/live')), 8000, 'ended');
+    // scrub back to the start: the past again
+    const tr = await R.locator('.lv-rp-track').boundingBox();
+    await R.mouse.click(tr.x + 2, tr.y + tr.height / 2);
+    await until(() => R.locator('.lv-table td[data-a="D3"]').textContent().then((x) => x === 'late'), 5000, 'scrubbed back');
+    const v0 = (await api('GET', '/api/doc?id=main')).version;
+    await R.locator('.lv-table td[data-a="D2"]').dispatchEvent('focusout');
+    await sleep(300);
+    eq((await api('GET', '/api/doc?id=main')).version, v0, 'nothing written during replay');
+    await R.screenshot({ path: path.join(SHOTS, 'live-replay.png') });
+    await R.keyboard.press('Escape');
+    await until(() => R.locator('.lv.lv-replaying').count().then((n) => n === 0), 5000, 'back to now');
+    await until(() => R.locator('.lv-table td[data-a="D3"]').textContent().then((x) => x === 'ok'), 5000, 'live data again (after the change effect)');
+    await R.context().close();
+    await ops([{ op: 'deleteSheet', sheet: 'Geo' }]);
   });
 
   // ================================================================ hostile content

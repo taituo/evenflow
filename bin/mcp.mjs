@@ -48,6 +48,31 @@ const TOOLS = [
     run: () => call('GET', '/api/screens') },
   { name: 'spread_present', description: 'Drive a Live screen: show a sheet or the combined layout, focus a card (chart:id, table:Name, stat:A1), play a slide, or remote actions next/prev/play/pause/toggle/unfocus. Use only when the user asks or expects it.', inputSchema: S({ sheet: str('sheet to show'), mode: { type: 'string', enum: ['sheet', 'auto'], description: 'auto = combined' }, focus: str('card to focus'), slide: num('slide number to play from'), action: { type: 'string', enum: ['next', 'prev', 'play', 'pause', 'toggle', 'unfocus'] }, theme: str('shader theme'), screen: str('target screen id'), off: bool('leave Live'), doc: str('workbook id') }),
     async run(a) { await call('POST', '/api/present', { ...a, by: 'agent' }); return 'ok — check with spread_live'; } },
+  { name: 'spread_map', description: 'Steer a map card (charts of type "map": points from named tables with lat/lon columns). Create one with spread_ops addChart {type:"map", layers:[{table:"Places", color:"Status", route:true}]}. Here: fly the camera, follow a moving point, focus a point (shows its row), switch layers, basemap.', inputSchema: S({ id: str('map chart id (default: the only map)'), fly: { type: 'object', description: '{lat, lon, zoom?, pitch?, bearing?} or {to:"point label", zoom?}' }, fit: bool('fit the camera to all points'), follow: str('point label to follow ("" stops)'), focus: str('point label to highlight ("" clears)'), basemap: { type: 'string', enum: ['dark', 'light', 'bright', 'none'] }, layers: { type: 'array', items: { type: 'object' }, description: 'replace the layers: [{table, lat?, lon?, label?, color?, pack?, value?, route?, hidden?}]' }, doc: str('workbook id') }),
+    async run(a) {
+      const d = JSON.parse(await call('GET', '/api/doc?id=' + encodeURIComponent(a.doc || 'main'))).doc;
+      const maps = d.sheets.flatMap((sh) => (sh.charts || []).filter((c) => c.type === 'map'));
+      const m = a.id ? maps.find((c) => c.id === a.id) : maps.length === 1 ? maps[0] : null;
+      if (!m) throw new Error(maps.length ? `which map? ${maps.map((c) => c.id).join(', ')}` : 'no maps yet — addChart {type:"map", layers:[{table:"…"}]}');
+      const o = { op: 'updateChart', id: m.id };
+      if (a.fly) { o.view = a.fly; o.follow = null; }
+      if (a.fit) { o.view = null; o.follow = null; }
+      if (a.follow !== undefined) { o.follow = a.follow || null; if (a.follow) o.view = null; }
+      if (a.focus !== undefined) o.focus = a.focus || null;
+      if (a.basemap) o.basemap = a.basemap === 'dark' ? null : a.basemap;
+      if (a.layers) o.layers = a.layers;
+      if (Object.keys(o).length > 2) await call('POST', '/api/ops?format=text', { doc: a.doc, by: 'agent', ops: [o] });
+      return call('GET', '/api/chart?' + qs({ id: m.id, doc: a.doc }));
+    } },
+  { name: 'spread_replay', description: 'Time replay on a Live screen: the workbook as it was at "from", then every change up to "to" played back sped up, with a clock and date. preview=true only lists what changed. Times: "14:30" (today), "-2h", "v120", "m3" (milestone), ISO or epoch ms.', inputSchema: S({ from: str('start (default -1h)'), to: str('end (default now)'), speed: num('× real time (default 60)'), loop: bool('loop'), gaps: bool('squeeze quiet stretches (default true)'), preview: bool('just list the changes in that window'), stop: bool('back to live data'), action: { type: 'string', enum: ['pause', 'play', 'toggle', 'next', 'prev'] }, screen: str('target screen id'), doc: str('workbook id') }),
+    async run(a) {
+      const when = (t) => { const m = /^(\d{1,2})[:.](\d{2})$/.exec(String(t ?? '')); if (!m) return t; const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); return +d; };
+      if (a.preview) return call('GET', '/api/replay?' + qs({ doc: a.doc, from: when(a.from ?? '-1h'), to: a.to && when(a.to) }));
+      if (a.stop) { await call('POST', '/api/present', { doc: a.doc, replay: 'stop', screen: a.screen, by: 'agent' }); return 'stopped — back to live data'; }
+      if (a.action) { await call('POST', '/api/present', { doc: a.doc, action: a.action, screen: a.screen, by: 'agent' }); return 'ok'; }
+      await call('POST', '/api/present', { doc: a.doc, screen: a.screen, by: 'agent', replay: { from: when(a.from ?? '-1h'), to: a.to && when(a.to), speed: a.speed, loop: a.loop, gaps: a.gaps } });
+      return 'replaying — spread_live shows where it is';
+    } },
   { name: 'spread_viz', description: 'SVG visual packs (spread-viz/1): list, read the spec, check or install a pack you wrote, remove one. Show a pack with =VIZ("id", A1) or an addChart {type:"viz", pack, value}.', inputSchema: S({ action: { type: 'string', enum: ['list', 'spec', 'check', 'install', 'remove'] }, pack: { type: 'object', description: 'the pack JSON (check / install)' }, id: str('pack id (remove)') }, ['action']),
     async run(a) {
       if (a.action === 'list') return call('GET', '/api/viz?format=text');

@@ -4,7 +4,7 @@ import { Engine, fmtValue, isImg, isViz } from '../../shared/engine.js';
 import { vizImage, allPacks, onPacks, getPack, vizDataUrl } from './viz-dom.js';
 import { setRedraw } from './charts.js';
 import { shiftFormula, refSpans, autoClose, literal, isErr, refBox } from '../../shared/formula.js';
-import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES, tableColumns } from '../../shared/types/sheet.js';
+import { tableAt, tables as allTables, mergeAt, chartData, CHART_TYPES, tableColumns, mapData, MAP_BASES } from '../../shared/types/sheet.js';
 import { drawChart } from './charts.js';
 import { openLive } from './live.js';
 import { condStyle, LIGHTS, parseRule, describeRule } from '../../shared/cond.js';
@@ -598,12 +598,53 @@ export function mount(root, ctx) {
     }
     return null;
   }
+  function mapEditor(ch, anchor) {
+    ctx.popover(anchor, (p, close) => {
+      p.style.width = '320px';
+      const row = (label, el) => { const l = document.createElement('label'); l.style.cssText = 'display:flex;gap:6px;align-items:center;width:100%'; const t = document.createElement('span'); t.textContent = label; t.style.cssText = 'width:64px;color:#5f6368;font-size:12px'; l.append(t, el); el.style.flex = '1'; p.append(l); return el; };
+      const title = row('Title', Object.assign(document.createElement('input'), { value: ch.title || '' }));
+      const layers = row('Layers', Object.assign(document.createElement('input'), { value: ch.layers.map((L) => L.table + (L.route ? ' +route' : '') + (L.color ? ' color=' + L.color : '')).join(', '), placeholder: 'Places +route, Robots color=Status' }));
+      const base = document.createElement('select');
+      for (const b of MAP_BASES) base.add(new Option(b === 'none' ? 'none (points float)' : b, b, false, b === (ch.basemap || 'dark')));
+      row('Map', base);
+      const follow = row('Follow', Object.assign(document.createElement('input'), { value: ch.follow || '', placeholder: 'a point label (camera follows it)' }));
+      const hint = document.createElement('div'); hint.style.cssText = 'font-size:11px;color:#5f6368'; hint.textContent = 'Columns lat/lon (or one "coords" column) are found by name. The full map is in ▶ Live.';
+      const save = document.createElement('button'); save.className = 'btn'; save.textContent = 'Save';
+      const fit = document.createElement('button'); fit.className = 'btn2'; fit.textContent = 'Fit to points';
+      const del = document.createElement('button'); del.className = 'btn'; del.textContent = 'Delete'; del.style.background = '#c5221f';
+      save.onclick = () => {
+        const L = layers.value.split(',').map((x) => x.trim()).filter(Boolean).map((x) => {
+          const [table, ...more] = x.split(/\s+/);
+          const o = { table: table.replace(/^@/, '') };
+          for (const m of more) { if (m === '+route') o.route = true; else if (m.includes('=')) { const [k, v] = m.split('='); o[k] = v; } }
+          const old = ch.layers.find((y) => y.table.toLowerCase() === o.table.toLowerCase());
+          return { ...(old || {}), ...o, ...(more.includes('+route') ? {} : { route: undefined }) };
+        }).map((o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)));
+        if (submit([{ op: 'updateChart', id: ch.id, title: title.value || null, layers: L, basemap: base.value === 'dark' ? null : base.value, follow: follow.value.trim() || null }])) close();
+        ed.focus();
+      };
+      fit.onclick = () => { close(); submit([{ op: 'updateChart', id: ch.id, view: null, follow: null }]); ed.focus(); };
+      del.onclick = () => { close(); submit([{ op: 'deleteChart', id: ch.id }]); selChart = null; ed.focus(); };
+      p.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); save.click(); } });
+      p.append(hint, save, fit, del);
+      setTimeout(() => title.focus());
+    });
+  }
+  /** A map of a table, when it has coordinates. */
+  function insertMap(tab) {
+    let n = 1;
+    while (doc.sheets.some((s2) => (s2.charts || []).some((c) => c.id === 'map' + n))) n++;
+    const o = { op: 'addChart', id: 'map' + n, sheet: sh().name, type: 'map', title: tab.t.name, layers: [{ table: tab.t.name }], at: addr(tab.R.c2 + 2, tab.R.r1) };
+    if (submit([o])) { selChart = o.id; requestDraw(); }
+  }
+  const hasCoords = (tab) => { try { return !mapData(doc, { layers: [{ table: tab.t.name }] }, engine).layers[0].error; } catch { return false; } };
   function chartEditor(ch, anchor) {
+    if (ch.type === 'map') return mapEditor(ch, anchor);
     ctx.popover(anchor, (p, close) => {
       p.style.width = '300px';
       const row = (label, el) => { const l = document.createElement('label'); l.style.cssText = 'display:flex;gap:6px;align-items:center;width:100%'; const t = document.createElement('span'); t.textContent = label; t.style.cssText = 'width:64px;color:#5f6368;font-size:12px'; l.append(t, el); el.style.flex = '1'; p.append(l); return el; };
       const type = document.createElement('select');
-      for (const t of CHART_TYPES) type.add(new Option(t, t, false, t === ch.type));
+      for (const t of CHART_TYPES) if (t !== 'map' && (t !== 'viz' || ch.type === 'viz')) type.add(new Option(t, t, false, t === ch.type));
       row('Type', type);
       const title = row('Title', Object.assign(document.createElement('input'), { value: ch.title || '' }));
       const src = row('Data', Object.assign(document.createElement('input'), { value: ch.type === 'kpi' ? ch.value || '' : ch.table ? '@' + ch.table : ch.range || '', placeholder: 'B6:C10 · @Table · C12 (kpi)' }));
@@ -949,6 +990,7 @@ export function mount(root, ctx) {
       onClose: (name) => { live = null; if (!sameName(name, sheetName)) switchSheet(name); ed.focus(); requestDraw(); },
     });
     live?.people?.(others);
+    if (opts.replay && live) live.present({ replay: opts.replay });
   }
   function refresh() {
     live?.update();
@@ -1999,7 +2041,7 @@ export function mount(root, ctx) {
       selChart = hcm.ch.id; requestDraw();
       return ctx.menu(e.clientX, e.clientY, [
         { label: 'Edit chart…', action: () => chartEditor(hcm.ch, { left: e.clientX, bottom: e.clientY }) },
-        ...CHART_TYPES.filter((t) => t !== 'kpi' && t !== hcm.ch.type && hcm.ch.type !== 'kpi').map((t) => ({ label: `→ ${t}`, action: () => submit([{ op: 'updateChart', id: hcm.ch.id, type: t }]) })),
+        ...CHART_TYPES.filter((t) => !['kpi', 'viz', 'map'].includes(t) && t !== hcm.ch.type && !['kpi', 'viz', 'map'].includes(hcm.ch.type)).map((t) => ({ label: `→ ${t}`, action: () => submit([{ op: 'updateChart', id: hcm.ch.id, type: t }]) })),
         '-',
         { label: 'Delete chart', action: () => { submit([{ op: 'deleteChart', id: hcm.ch.id }]); selChart = null; } },
       ]);
@@ -2022,6 +2064,7 @@ export function mount(root, ctx) {
       ...doc.sheets.filter((x) => !sameName(x.name, sh().name)).slice(0, 6).map((x) => ({ label: `▦ ${tab.t.name}: move to sheet ${x.name}`, action: () => moveTable(tab.t, x.name, freeSpot(x, parseRange(tab.t.range))) })),
       '-',
     ] : [{ label: '▦ Create table from selection…', action: () => createTable(e) }, '-'];
+    if (tab && hasCoords(tab)) tableItems.unshift({ label: `🗺 Map of ${tab.t.name}`, action: () => insertMap(tab) });
     tableItems.unshift({ label: '📊 Insert chart', action: () => insertChart() });
     ed.focus();
     ctx.menu(e.clientX, e.clientY, [

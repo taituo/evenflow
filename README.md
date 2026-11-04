@@ -7,12 +7,12 @@ for agents: they read *only what changed*, address data by table and column inst
 versioned. Flip any sheet into **Live** and it becomes a real-time, presentation-grade dashboard over a WebGL shader
 background.
 
-Zero dependencies. Node 22.13+ and a browser. Works headless.
+Zero dependencies (two libraries vendored: shaders and maps). Node 22.13+ and a browser. Works headless.
 
 ```bash
 npm start          # http://127.0.0.1:3210
-npm test           # 41 tests: engine, API, CLI, history, presence, a 2000-round undo/redo fuzz over every op
-npm run e2e        # 26 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, table tools, remote, phone, XSS
+npm test           # 50 tests: engine, API, CLI, MCP, maps, replay, the demo tour, a 2000-round undo/redo fuzz over every op
+npm run e2e        # 28 browser tests (Playwright): two users, Live, slides, traffic lights, effects, visuals, maps, replay, table tools, remote, phone, XSS
 ```
 
 ![The grid](docs/grid.jpg)
@@ -28,7 +28,7 @@ npm run e2e        # 26 browser tests (Playwright): two users, Live, slides, tra
 - [SVG visuals](#svg-visuals)
 - [SQL and JSON](#sql-and-json)
 - [Charts, images, documents](#charts-images-documents)
-- [Live mode](#live-mode)
+- [Live mode](#live-mode) · [Maps](#maps) · [Time replay](#time-replay)
 - [Slides](#slides)
 - [Multi-user and history](#multi-user-and-history)
 - [Remote control](#remote-control)
@@ -261,6 +261,48 @@ cm style chart:cStatus card=glass    # this one keeps its glass
 cm style chart:cStatus reset
 ```
 
+### Maps
+
+A table with coordinates becomes a **map card**: right-click a table → *🗺 Map of Places*, or
+`cm map add Places --route`. Columns named `lat`/`lon` (also `latitude`, `lng`, `leveys`, `pituus`) or one `coords`
+column (`60.17, 24.94`) are found by name. Each table is a layer; a layer can join its points into a **route**, color
+them from a column (traffic lights, `#hex`, or one color per value) and draw an SVG visual at each point
+(`=VIZ(…)` cells, or `pack` + `value`).
+
+In Live the map is a real vector map (MapLibre GL, vendored; OpenFreeMap tiles, no key): points **glide** when their
+coordinates change and leave a fading trail, a click shows the point's row. Basemaps: `dark`, `light`, `bright`, or
+`none` — the points float on the Live background (and that is also the offline fallback). In the grid the map is a
+sketch of the same points. The agent steers the camera:
+
+```bash
+cm map fly 60.17 24.94 --zoom 14 --pitch 45   # or: fly "Kamppi" · fly fit
+cm map follow R2          # the camera follows a moving point (off to stop)
+cm map focus Base         # highlight a point and show its row
+cm map layer Parts --route · cm map layer Parts off · cm map basemap none
+```
+
+![A map card in Live: a route, a focused point with its row](docs/live-map.jpg)
+
+### Time replay
+
+**⏱ Replay** in the Live bar plays back what changed: the screen goes back to how the workbook looked at the start
+(last 15 min, hour, today, since the last milestone, or any time) and every change since is replayed **sped up**
+(×10 … ×3600) with the same effects as live — numbers roll, rows condense, map points drive their routes. A clock and
+the date run in an overlay; quiet stretches are squeezed (⏩). Space pauses, ← → jump between changes, the timeline
+scrubs, Esc returns to now. Nothing is written while you look at the past.
+
+Every batch is stored with its exact inverse, so the past is rebuilt precisely (moves, inserts, restores included).
+
+```bash
+cm replay --from 09:00 --to 12:00 --speed 360 [--loop] [--screen tv]   # also -2h, v120, m3 (a milestone), ISO
+cm replay ls --from -2h      # what changed in that window, as text
+cm replay pause | play | next | prev | stop
+```
+
+The phone remote has ⏱ 15 min / 1 h / Today buttons; its ◀ ⏯ ▶ drive the replay while one runs.
+
+![Replay: the dashboard rebuilding itself, sped up, with a clock](docs/live-replay.jpg)
+
 ## Slides
 
 Any Live view can become a slide: a sheet or the combined layout, optionally focused on one card or filtered to a
@@ -354,11 +396,11 @@ claude mcp add spread -- node /path/to/spread/bin/mcp.mjs
 
 Tools: `spread_help`, `spread_overview`, `spread_changes` (keeps its own cursor, own edits filtered out),
 `spread_read`, `spread_ops`, `spread_sql`, `spread_history`, `spread_live`, `spread_screens`, `spread_present`,
-`spread_viz`, `spread_demo`.
+`spread_map`, `spread_replay`, `spread_viz`, `spread_demo`.
 
 ## Guided demo
 
-A 21-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
+A 23-step tour of the features, on its own workbook (`/#demo`; yours is untouched). Open the app, then:
 
 ```bash
 cm demo               # Enter = next step, b = back, r = repeat, 7 = jump, q = quit
@@ -428,7 +470,8 @@ Text responses by default; add `format=json` for JSON.
 | `POST /api/assets` | raw image body → `{ url }` |
 | `POST /api/commit` · `GET /api/commits` · `GET /api/diff?from=m3` · `POST /api/restore` | milestones |
 | `GET /api/selection` · `POST /api/focus` | the user's selection · highlight where the agent works |
-| `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, screen}`) / read what a screen shows |
+| `POST /api/present` · `GET /api/live?screen=` | drive Live (`{sheet, mode, focus, slide, action: next\|prev\|play\|pause\|toggle\|unfocus, replay: {from, to?, speed?, loop?, gaps?} \| "stop", screen}`) / read what a screen shows |
+| `GET /api/replay?from=&to=` | the doc as it was at `from` and every batch up to `to` (text summary, or `format=json`) |
 | `GET /api/screens` | open Live views (TVs, laptops) and what they show |
 | `GET /api/viz` · `GET /api/viz/spec` · `POST /api/viz[?dry=1]` · `DELETE /api/viz?id=` | SVG visual packs: list, the spec, validate / install, remove |
 | `GET /api/history?cell=Sheet!C8` · `?table=Tasks` | change history of a cell (move-aware) or a table |
@@ -450,6 +493,10 @@ Configuration: `PORT`, `HOST` (default `127.0.0.1` — there is no authenticatio
 
 Background shaders: [Paper Shaders](https://github.com/paper-design/shaders) by Paper, Apache-2.0
 (vendored unmodified apart from type stripping; see `public/vendor/paper-shaders/`).
+
+Maps: [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), BSD-3-Clause (vendored unmodified, loaded only when a
+map is shown; see `public/vendor/maplibre/`). Tiles from [OpenFreeMap](https://openfreemap.org), map data ©
+[OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (shown on every map).
 
 ## License
 

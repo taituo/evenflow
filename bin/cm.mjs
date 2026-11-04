@@ -75,6 +75,11 @@ const help = `cm — Spread agent CLI   (CANVAS_URL=${BASE})
   cm demo [--auto 7] [--step N] [--from N] [--list] [--screen tv]   guided tour of every feature (on a "demo" workbook)
   cm style cards glass|outline|clear · cm style lines rows|grid|none     Live look for the whole workbook
   cm style chart:status card=clear · cm style Tasks lines=grid · cm style Tasks reset   per card (keys from cm live)
+  cm map add Places [--lat Lat --lon Lon --label Name --color Status --pack status --value Status --route] [--at K2 --title …]
+  cm map [ID] fly 60.17 24.94 [--zoom 13 --pitch 45] | fly "Kamppi" | fly fit | follow Robot1|off | focus Kamppi|off
+  cm map [ID] layer Parts [--route] | layer Parts off|on|rm | basemap dark|light|bright|none | trail off   ·  cm map (list)
+  cm replay --from 09:00 [--to 12:00] [--speed 360] [--loop] [--no-gaps] [--screen tv]   play back what changed, with a clock
+  cm replay ls --from -2h          what a replay would show ·  cm replay pause|play|next|prev|stop   (from: 14:30, -2h, v120, m3, ISO)
   cm screens                       open Live views (TV, laptop…) — target one with --screen id
   cm present next|prev|play|pause|unfocus [--screen tv]   remote control: slides, or a carousel of cards
   cm history Sheet!A1 | cm history @Tasks          who changed what, following moves
@@ -285,6 +290,76 @@ switch (cmd) {
       await show(++i);
     }
     rl.close();
+    break;
+  }
+  case 'map': {
+    // maps: points from named tables, the camera steered by the agent
+    const doc = JSON.parse(await call('GET', '/api/doc?id=' + (DOC || 'main'))).doc;
+    const all = doc.sheets.flatMap((sh) => (sh.charts || []).filter((c) => c.type === 'map').map((c) => ({ sh: sh.name, ch: c })));
+    const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; const has = v !== undefined && !v.startsWith('--'); args.splice(i, has ? 2 : 1); return has ? v : true; };
+    const layerFlags = () => { const L = {}; for (const k of ['lat', 'lon', 'label', 'color', 'pack', 'value', 'name']) { const v = flag(k); if (v !== undefined) L[k] = v; } if (flag('route')) L.route = true; return L; };
+    let sub = args[0];
+    if (!sub || sub === 'ls') { if (!all.length) { out('no maps — cm map add Places [--route]'); break; } for (const m of all) out(await call('GET', '/api/chart?' + qs({ doc: DOC, id: m.ch.id }))); break; }
+    if (sub === 'add') {
+      const table = args[1];
+      const t = doc.sheets.flatMap((sh) => (sh.tables || []).map((x) => ({ sh: sh.name, t: x }))).find((x) => x.t.name.toLowerCase() === String(table).toLowerCase());
+      const o = { id: flag('id'), at: flag('at'), title: flag('title'), basemap: flag('basemap'), sheet: flag('sheet') || t?.sh };
+      const r = JSON.parse(await call('POST', '/api/ops', { doc: DOC || undefined, by: BY, ops: [{ op: 'addChart', type: 'map', layers: [{ table, ...layerFlags() }], ...o }] }));
+      const ch = r.changes.find((c) => c.k === 'chart');
+      out(`ok v${r.version}  map ${ch.id} ← @${table}   (cm map ${ch.id} fly … | follow … | layer …)`);
+      break;
+    }
+    let m = all.find((x) => x.ch.id === sub);
+    if (m) { args.shift(); sub = args[0]; } else if (all.length === 1) m = all[0];
+    else { console.error(all.length ? `which map? ${all.map((x) => x.ch.id).join(', ')} — cm map ID ${sub} …` : 'no maps — cm map add Places'); process.exit(2); }
+    const id = m.ch.id, upd = (o) => ops([{ op: 'updateChart', id, ...o }]);
+    const off = (v) => ['off', 'none', 'stop', 'clear', '-'].includes(String(v).toLowerCase());
+    const rest = args.slice(1);
+    switch (sub) {
+      case 'fly': case 'view': {
+        if (rest[0] === 'fit' || !rest.length) { await upd({ view: null, follow: null }); break; }
+        const zoom = flag('zoom'), pitch = flag('pitch'), bearing = flag('bearing');
+        const r2 = args.slice(1);
+        const v = {};
+        if (r2.length >= 2 && !isNaN(+r2[0]) && !isNaN(+r2[1])) { v.lat = +r2[0]; v.lon = +r2[1]; } else if (r2.length && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(r2[0])) { [v.lat, v.lon] = r2[0].split(',').map(Number); } else if (r2.length) v.to = r2.join(' ');
+        if (zoom !== undefined) v.zoom = +zoom; if (pitch !== undefined) v.pitch = +pitch; if (bearing !== undefined) v.bearing = +bearing;
+        await upd({ view: v, follow: null });
+        break;
+      }
+      case 'zoom': await upd({ view: { ...(m.ch.view || {}), zoom: +rest[0] } }); break;
+      case 'follow': await upd(off(rest[0]) ? { follow: null } : { follow: rest.join(' '), view: null }); break;
+      case 'focus': await upd({ focus: off(rest[0]) ? null : rest.join(' ') }); break;
+      case 'basemap': await upd({ basemap: rest[0] === 'dark' ? null : rest[0] }); break;
+      case 'trail': await upd({ trail: off(rest[0]) ? false : null }); break;
+      case 'layer': case 'route': {
+        const name = rest[0], state = rest[1];
+        const layers = m.ch.layers.map((L) => ({ ...L }));
+        const i = layers.findIndex((L) => (L.name || L.table).toLowerCase() === String(name).toLowerCase());
+        if (sub === 'route') { if (i < 0) { console.error('no layer ' + name); process.exit(2); } layers[i].route = !off(state); if (!layers[i].route) delete layers[i].route; }
+        else if (state === 'rm' || state === 'remove') { if (i < 0) { console.error('no layer ' + name); process.exit(2); } layers.splice(i, 1); }
+        else if (state === 'off' || state === 'hide') layers[i].hidden = true;
+        else if (state === 'on' || state === 'show') delete layers[i].hidden;
+        else { const L = { table: name, ...layerFlags() }; if (i >= 0) layers[i] = { ...layers[i], ...L }; else layers.push(L); }
+        await upd({ layers });
+        break;
+      }
+      case 'rm': await ops([{ op: 'deleteChart', id }]); break;
+      default: console.error('cm map [ID] fly LAT LON|LABEL|fit [--zoom 12 --pitch 45 --bearing 0] · zoom Z · follow LABEL|off · focus LABEL|off · layer TABLE [on|off|rm|--route --color Col …] · route TABLE on|off · basemap dark|light|bright|none · trail on|off · rm'); process.exit(2);
+    }
+    break;
+  }
+  case 'replay': {
+    // time replay on a Live screen: cm replay --from 09:00 [--to 12:00] [--speed 360] · cm replay stop|pause|play|next|prev · cm replay ls --from -2h
+    const flag = (n) => { const i = args.indexOf('--' + n); if (i < 0) return undefined; const v = args[i + 1]; const has = v !== undefined && !v.startsWith('--'); args.splice(i, has ? 2 : 1); return has ? v : true; };
+    const when = (t) => { const m = /^(\d{1,2})[:.](\d{2})(?::(\d{2}))?$/.exec(String(t)); if (!m) return t; const d = new Date(); d.setHours(+m[1], +m[2], +(m[3] || 0), 0); return +d; };   // your clock, not the server's
+    const from = flag('from'), to = flag('to'), speed = flag('speed'), screen = flag('screen'), sheet = flag('sheet');
+    const gaps = !flag('no-gaps'), loop = !!flag('loop'), combined = !!flag('combined');
+    const sub = args[0];
+    if (sub === 'ls' || sub === 'list') { out(await call('GET', '/api/replay?' + qs({ doc: DOC, from: when(from ?? '-1h'), to: to && when(to) }))); break; }
+    if (sub === 'stop' || sub === 'off') { await call('POST', '/api/present', { doc: DOC || undefined, replay: 'stop', screen, by: BY }); out('ok'); break; }
+    if (['pause', 'play', 'toggle', 'next', 'prev'].includes(sub)) { await call('POST', '/api/present', { doc: DOC || undefined, action: sub, screen, by: BY }); out('ok'); break; }
+    await call('POST', '/api/present', { doc: DOC || undefined, sheet, mode: combined ? 'auto' : undefined, screen, by: BY, replay: { from: when(from ?? sub ?? '-1h'), to: to && when(to), speed: speed ? +speed : undefined, gaps, loop } });
+    out('ok — replaying on the Live screen (cm live shows where it is; cm replay stop)');
     break;
   }
   case 'style': {

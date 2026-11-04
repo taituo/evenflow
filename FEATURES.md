@@ -27,7 +27,7 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | Freeze rows/cols, hide gridlines | ⋯ → ❄ / # | |
 | ☐ | Insert/delete rows and columns; resize + double-click autofit | right-click; header edges | |
 | ☐ | Images in cells | drop an image on a cell, or `=IMAGE(url)` | |
-| ☐ | Undo/redo with exact inverses (moves, deletes, merges, tables, charts, lights) | Ctrl+Z / Ctrl+Y | 19 |
+| ☐ | Undo/redo with exact inverses (moves, deletes, merges, tables, charts, lights) | Ctrl+Z / Ctrl+Y | 21 |
 | ☐ | Two-page toolbar | ⋯ switches pages (remembered) | |
 
 ## Named tables
@@ -50,7 +50,7 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | SQL result into a new table | | 5 |
 | ☐ | Tables ⇄ JSON | `cm json Tasks`, `cm put` | |
 | ☐ | Several workbooks + text notes | `+` in the top bar | 1 |
-| ☐ | Export a sheet as Markdown / HTML | `cm export Robot md` | 20 |
+| ☐ | Export a sheet as Markdown / HTML | `cm export Robot md` | 22 |
 
 ## Charts, KPIs, lights, visuals
 
@@ -71,7 +71,7 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | Every edit versioned; History panel reads like the agent's feed | History | 3 |
 | ☐ | Milestones (Ctrl+S), move-aware diff highlighted in the grid, restore | ⚑ Milestone, History → diff | 10 |
 | ☐ | Cell and table history (follows moves and inserts) | right-click → History of… | 9 |
-| ☐ | Several people: names/colors, their selections, tab dots, edits flash in their color | open a second browser | 18 |
+| ☐ | Several people: names/colors, their selections, tab dots, edits flash in their color | open a second browser | 20 |
 | ☐ | Agent presence: purple flashes, labelled focus box, “agent:” activity line | | 2, 3 |
 | ☐ | Optimistic concurrency (`expect` → 409) | API | |
 
@@ -95,6 +95,29 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 | ☐ | Slow devices: background quality steps down, `?quality=` | `/?live=Dashboard&quality=low` | |
 | ☐ | Two-page bar: navigation, and ◐ Look › | | |
 
+## Maps
+
+| ✓ | Feature | Try it | Demo |
+|---|---|---|---|
+| ☐ | Map card from a table with coordinates (lat/lon by name, or one `coords` column) | right-click a table → 🗺 Map of …; `cm map add Places` | 18 |
+| ☐ | Several tables = layers; routes; colors from traffic lights / `#hex` / values; SVG visuals at points | right-click the map → Edit chart…; `cm map layer` | 18 |
+| ☐ | Grid shows a sketch of the points; Live shows the real map (OpenFreeMap; dark / light / bright / none) | | 18 |
+| ☐ | Points glide when coordinates change and leave a trail | edit a Lat cell | 18 |
+| ☐ | Click a point → its row; the agent focuses a point | `cm map focus Base` | 18 |
+| ☐ | The agent flies the camera, follows a moving point, fits to all points | `cm map fly …`, `follow`, `fly fit` | 18 |
+| ☐ | Offline: the basemap drops out, the points stay | disconnect the network | |
+
+## Time replay
+
+| ✓ | Feature | Try it | Demo |
+|---|---|---|---|
+| ☐ | Replay the last 15 min / hour / today / since a milestone / from any time | Live → ⏱ Replay | 19 |
+| ☐ | Clock and date overlay; ⏩ while quiet time is squeezed | | 19 |
+| ☐ | Speed ×10 … ×3600; pause (Space), previous/next change (← →), scrub the timeline | | 19 |
+| ☐ | Exact past: moves, inserts, restores and map camera moves replay correctly | | 19 |
+| ☐ | Editing is blocked during replay; Esc / ✕ Live returns to now | | 19 |
+| ☐ | Agent and phone drive it: `cm replay --from 09:00 --speed 360`, remote ⏱ buttons | | 19 |
+
 ## Slides & remote
 
 | ✓ | Feature | Try it | Demo |
@@ -111,6 +134,6 @@ Automated: `npm test` (engine, API, CLI, history, presence, visuals, a 2000-roun
 |---|---|---|---|
 | ☐ | REST API (text by default, `format=json`) | `curl :3210/api/overview` | all |
 | ☐ | CLI `cm` (overview, changes, read, set, tables, SQL, charts, lights, visuals, Live, slides, screens, history) | `node bin/cm.mjs help` | all |
-| ☐ | MCP server (`bin/mcp.mjs`): 12 tools incl. the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
+| ☐ | MCP server (`bin/mcp.mjs`): 14 tools incl. maps, replay and the tour | `claude mcp add spread -- node bin/mcp.mjs` | all |
 | ☐ | Change feed: only what changed, moves as one line, recalculated values | `cm changes` | 3 |
 | ☐ | The agent reads the screen (`cm live`) | | 11 |

@@ -5,7 +5,7 @@ import {
 } from '../a1.js';
 import { transformFormula, refBox, renameTableRefs, literal } from '../formula.js';
 import { computeAll, Engine, fmtValue } from '../engine.js';
-import { WHEN, LIGHTS, describeRule } from '../cond.js';
+import { WHEN, LIGHTS, describeRule, condStyle } from '../cond.js';
 
 export const type = 'sheet';
 const MAX_CELLS_PER_OP = 200000;
@@ -712,8 +712,35 @@ function opSetConds(st, op) {
 }
 
 // ------------------------------------------------------------------ charts (floating, live)
-export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz'];
-const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors'];
+export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'kpi', 'viz', 'map'];
+const CHART_KEYS = ['type', 'title', 'range', 'table', 'x', 'y', 'value', 'label', 'value2', 'label2', 'pack', 'at', 'dx', 'dy', 'w', 'h', 'stacked', 'colors', 'layers', 'view', 'basemap', 'follow', 'focus', 'trail'];
+export const MAP_BASES = ['dark', 'light', 'bright', 'none'];
+const LAYER_KEYS = ['table', 'name', 'lat', 'lon', 'label', 'color', 'pack', 'value', 'route', 'hidden'];
+function checkMap(ch) {
+  if (!Array.isArray(ch.layers) || !ch.layers.length) fail('map needs layers: [{"table":"Places"}] (a named table with lat/lon columns)');
+  if (ch.layers.length > 12) fail('map: at most 12 layers');
+  ch.layers = ch.layers.map((L) => {
+    if (typeof L === 'string') L = { table: L };
+    if (!L || typeof L.table !== 'string' || !L.table.trim()) fail('map layer needs table (a named table)');
+    for (const k of Object.keys(L)) if (!LAYER_KEYS.includes(k)) fail(`map layer: unknown key "${k}" (${LAYER_KEYS.join(', ')})`);
+    if (L.pack != null && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(L.pack))) fail('map layer pack must be an SVG pack id');
+    const out = {};
+    for (const k of LAYER_KEYS) if (L[k] != null && L[k] !== false && L[k] !== '') out[k] = typeof L[k] === 'string' ? L[k].trim() : L[k];
+    return out;
+  });
+  const names = ch.layers.map((L) => (L.name || L.table).toLowerCase());
+  if (new Set(names).size !== names.length) fail('map: two layers with the same name (give one a "name")');
+  if (ch.basemap != null && !MAP_BASES.includes(ch.basemap)) fail(`map basemap: ${MAP_BASES.join(' | ')}`);
+  if (ch.view != null) {
+    const v = ch.view;
+    if (typeof v !== 'object' || Array.isArray(v)) fail('map view: {lat, lon, zoom?, bearing?, pitch?} or {to:"label", zoom?}');
+    const okN = (k, lo, hi) => { if (v[k] != null && !(typeof v[k] === 'number' && v[k] >= lo && v[k] <= hi)) fail(`map view.${k} must be a number ${lo}…${hi}`); };
+    okN('lat', -85, 85); okN('lon', -180, 180); okN('zoom', 0, 22); okN('bearing', -360, 360); okN('pitch', 0, 85);
+    if ((v.lat == null) !== (v.lon == null)) fail('map view needs both lat and lon');
+    if (v.lat == null && !v.to && v.zoom == null) fail('map view needs lat+lon, to (a point label) or zoom');
+    for (const k of Object.keys(v)) if (!['lat', 'lon', 'zoom', 'bearing', 'pitch', 'to'].includes(k)) fail(`map view: unknown key "${k}"`);
+  }
+}
 export function allCharts(st) { const out = []; for (const sh of st.sheets) for (const ch of sh.charts || []) out.push({ sh, ch }); return out; }
 function findChart(st, id) {
   const x = allCharts(st).find((x) => x.ch.id === id);
@@ -722,7 +749,8 @@ function findChart(st, id) {
 }
 function checkChart(ch) {
   if (!CHART_TYPES.includes(ch.type)) fail(`Bad chart type "${ch.type}" (${CHART_TYPES.join('|')})`);
-  if (ch.type === 'viz') {
+  if (ch.type === 'map') checkMap(ch);
+  else if (ch.type === 'viz') {
     if (!ch.value) fail('viz chart needs value (cell, e.g. "C12")');
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(ch.pack || ''))) fail('viz chart needs pack (an SVG pack id, e.g. "battery")');
   } else if (ch.type === 'kpi' ? !ch.value : !ch.range && !ch.table) fail(ch.type === 'kpi' ? 'kpi chart needs value (cell, e.g. "C12")' : 'chart needs range ("B6:C10") or table');
@@ -737,11 +765,12 @@ function opAddChart(st, op) {
   const ch = { id };
   for (const k of CHART_KEYS) if (op[k] !== undefined && op[k] !== null) ch[k] = clone(op[k]);
   if (typeof ch.range === 'string' && ch.range.startsWith('@')) { ch.table = ch.range.slice(1); delete ch.range; }
-  ch.at ||= 'H2'; ch.w ||= ch.type === 'kpi' ? 220 : ch.type === 'viz' ? 180 : 440; ch.h ||= ch.type === 'kpi' ? 120 : ch.type === 'viz' ? 180 : 260; ch.dx ||= 0; ch.dy ||= 0;
+  ch.at ||= 'H2'; ch.w ||= ch.type === 'kpi' ? 220 : ch.type === 'viz' ? 180 : ch.type === 'map' ? 520 : 440; ch.h ||= ch.type === 'kpi' ? 120 : ch.type === 'viz' ? 180 : ch.type === 'map' ? 340 : 260; ch.dx ||= 0; ch.dy ||= 0;
   if (typeof ch.y === 'string') ch.y = ch.y.split(',').map((x) => x.trim());
   checkChart(ch);
+  if (ch.type === 'map') for (const L of ch.layers) findTable(st, L.table);
   (sh.charts ||= []).push(ch);
-  return { inverse: [{ op: 'deleteChart', id }], changes: [{ k: 'chart', action: 'add', id, sheet: sh.name, type: ch.type, source: ch.table ? '@' + ch.table : ch.range || ch.value, at: ch.at }] };
+  return { inverse: [{ op: 'deleteChart', id }], changes: [{ k: 'chart', action: 'add', id, sheet: sh.name, type: ch.type, source: ch.type === 'map' ? ch.layers.map((L) => '@' + L.table).join(' ') : ch.table ? '@' + ch.table : ch.range || ch.value, at: ch.at }] };
 }
 function opUpdateChart(st, op) {
   const { sh, ch } = findChart(st, op.id);
@@ -750,6 +779,7 @@ function opUpdateChart(st, op) {
   if (typeof ch.range === 'string' && ch.range.startsWith('@')) { ch.table = ch.range.slice(1); delete ch.range; if (!('table' in old)) old.table = null; }
   if ('range' in op && op.range && !String(op.range).startsWith('@') && ch.table) { if (!('table' in old)) old.table = ch.table; delete ch.table; }
   checkChart(ch);
+  if (ch.type === 'map' && 'layers' in op) for (const L of ch.layers) findTable(st, L.table);
   const what = Object.keys(op).filter((k) => k !== 'op' && k !== 'id');
   const moved = what.every((k) => ['at', 'dx', 'dy', 'w', 'h'].includes(k));
   return { inverse: [old], changes: [{ k: 'chart', action: moved ? 'layout' : 'update', id: ch.id, sheet: sh.name, type: ch.type, fields: what }] };
@@ -759,6 +789,81 @@ function opDeleteChart(st, op) {
   sh.charts.splice(sh.charts.indexOf(ch), 1);
   if (!sh.charts.length) delete sh.charts;
   return { inverse: [{ op: 'addChart', sheet: sh.name, ...clone(ch) }], changes: [{ k: 'chart', action: 'delete', id: ch.id, sheet: sh.name, type: ch.type }] };
+}
+
+// ------------------------------------------------------------------ maps: points from named tables
+const LAT_RE = /^(lat|latitude|leveys(aste)?|lev)$/i, LON_RE = /^(lon|lng|long|longitude|pituus(aste)?|pit)$/i, POS_RE = /^(coords?|pos(ition)?|location|sijainti|koordinaatit|latlon|lat ?, ?lon)$/i;
+const PALETTE = ['#4ea1ff', '#ff7a59', '#3ddc97', '#ffd166', '#c084fc', '#22d3ee', '#f472b6', '#a3e635'];
+const hashColor = (t) => { let h = 0; for (const ch of String(t)) h = (h * 31 + ch.charCodeAt(0)) | 0; return PALETTE[Math.abs(h) % PALETTE.length]; };
+const toNum = (v) => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' && !isNaN(+v.replace(',', '.')) ? +v.replace(',', '.') : null);
+/** "60.17, 24.94" / "60,17 24,94" / "60.17;24.94" → [lat, lon] */
+export function parseLatLon(t) {
+  const m = /^\s*(-?\d+(?:[.,]\d+)?)\s*[,; ]\s*(-?\d+(?:[.,]\d+)?)\s*$/.exec(String(t ?? ''));
+  if (!m) return null;
+  const a = +m[1].replace(',', '.'), b = +m[2].replace(',', '.');
+  return Math.abs(a) <= 90 && Math.abs(b) <= 180 ? [a, b] : null;
+}
+/** Every layer's points: { layers:[{name, table, points:[{key,lat,lon,label,color,viz,row}], route, error}] } */
+export function mapData(st, ch, en = new Engine(st)) {
+  const layers = [];
+  for (const L of ch.layers || []) {
+    const out = { name: L.name || L.table, table: L.table, route: !!L.route, hidden: !!L.hidden, points: [], skipped: 0 };
+    layers.push(out);
+    let x;
+    try { x = findTable(st, L.table); } catch (e) { out.error = e.message; continue; }
+    const cols = tableColumns(x.sh, x.R);
+    const find = (name, re) => {
+      if (name) { try { return colIndex(x.sh, x.R, name); } catch (e) { out.error = e.message; return -2; } }
+      return re ? cols.findIndex((c) => re.test(c.trim())) : -1;
+    };
+    const iLat = find(L.lat, LAT_RE), iLon = find(L.lon, LON_RE), iPos = L.lat || L.lon ? -1 : cols.findIndex((c) => POS_RE.test(c.trim()));
+    if (out.error) continue;
+    if ((iLat < 0 || iLon < 0) && iPos < 0) { out.error = `table ${L.table} needs lat and lon columns (or one "coords" column like "60.17, 24.94"), or say which: lat=…, lon=…`; continue; }
+    let iLabel = find(L.label);
+    const iColor = find(L.color), iValue = find(L.value);
+    if (out.error) continue;
+    if (iLabel < 0) iLabel = cols.findIndex((_, i) => i !== iLat && i !== iLon && i !== iPos);
+    const seen = new Map();
+    for (let r = x.R.r1 + 1; r <= x.R.r2; r++) {
+      const v = (i) => en.value(x.sh, x.R.c1 + i, r);
+      let lat, lon;
+      if (iLat >= 0 && iLon >= 0) { lat = toNum(v(iLat)); lon = toNum(v(iLon)); }
+      else { const p = parseLatLon(fmtValue(v(iPos))); if (p) [lat, lon] = p; }
+      const empty = cols.every((_, i) => v(i) == null || v(i) === '');
+      if (empty) continue;
+      if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) { out.skipped++; continue; }
+      const label = iLabel >= 0 ? fmtValue(v(iLabel)) : String(r - x.R.r1);
+      let key = label || 'row' + (r - x.R.r1);
+      const n = (seen.get(key) || 0) + 1; seen.set(key, n);
+      if (n > 1) key += '#' + n;
+      let color = null, light = null;
+      const lightAt = (i) => condStyle(en, x.sh, x.R.c1 + i, r, v(i))?.dot || null;
+      if (iColor >= 0) {
+        const cv = fmtValue(v(iColor));
+        color = /^#[0-9a-f]{3,8}$/i.test(cv) ? cv : (light = lightAt(iColor)) || (cv ? hashColor(cv) : null);
+      } else for (let i = 0; i < cols.length && !light; i++) light = lightAt(i);
+      color ||= light || PALETTE[layers.length - 1 & 7];
+      let viz = null;
+      const vv = iValue >= 0 ? v(iValue) : null;
+      if (vv && typeof vv === 'object' && 'pack' in vv) viz = { pack: vv.pack, value: vv.value, label: vv.label };
+      else if (L.pack) viz = { pack: L.pack, value: iValue >= 0 ? vv : iColor >= 0 ? v(iColor) : null, label };
+      const row = {};
+      cols.forEach((c, i) => { row[c] = fmtValue(v(i)); });
+      out.points.push({ key, lat, lon, label, color, light: !!light, viz, row, cell: x.sh.name + '!' + addr(x.R.c1, r) });
+    }
+  }
+  return { layers, view: ch.view || null, basemap: ch.basemap || 'dark', follow: ch.follow || null, focus: ch.focus || null, trail: ch.trail !== false };
+}
+/** Fit a set of points into w×h (Web Mercator); returns {project(lat,lon)→[x,y], zoom} */
+export function fitMercator(points, w, h, pad = 24) {
+  const X = (lon) => (lon + 180) / 360, Y = (lat) => { const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+  if (!points.length) return { project: () => [w / 2, h / 2], zoom: 1 };
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const p of points) { const x = X(p.lon), y = Y(p.lat); x1 = Math.min(x1, x); x2 = Math.max(x2, x); y1 = Math.min(y1, y); y2 = Math.max(y2, y); }
+  const span = Math.max(x2 - x1, y2 - y1, 0.0004);   // ≥ ~ a city block
+  const k = Math.min((w - 2 * pad) / Math.max(x2 - x1, span * 0.3), (h - 2 * pad) / Math.max(y2 - y1, span * 0.3));
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  return { project: (lat, lon) => [w / 2 + (X(lon) - cx) * k, h / 2 + (Y(lat) - cy) * k], zoom: Math.log2(k / 512) };
 }
 
 /** Live data for a chart: { labels, series:[{name, values}] } or { kpi: {value, label} } */
@@ -772,6 +877,7 @@ export function chartData(st, sheetName, ch, en = new Engine(st)) {
     if (v && typeof v === 'object' && 'pack' in v) v = v.value;   // a =VIZ() cell: show its value
     return { viz: { pack: ch.pack, value: v, text: fmtValue(v), label: ch.label || ch.title || '' } };
   }
+  if (ch.type === 'map') return { map: mapData(st, ch, en) };
   if (ch.type === 'kpi') {
     const [sn, a] = splitSheet(ch.value);
     const s2 = findSheet(st, sn ?? sh.name);
@@ -1036,7 +1142,10 @@ function opRenameTable(st, op) {
   const old = x.t.name;
   x.t.name = validTableName(st, op.newName, x.t);
   for (const sh of st.sheets) for (const cell of Object.values(sh.cells)) if (isFormula(cell.v)) cell.v = renameTableRefs(cell.v, old, x.t.name);
-  for (const { ch } of allCharts(st)) if (ch.table && sameName(ch.table, old)) ch.table = x.t.name;
+  for (const { ch } of allCharts(st)) {
+    if (ch.table && sameName(ch.table, old)) ch.table = x.t.name;
+    for (const L of ch.layers || []) if (sameName(L.table, old)) L.table = x.t.name;
+  }
   return { inverse: [{ op: 'renameTable', name: x.t.name, newName: old }], changes: [{ k: 'table', action: 'rename', name: old, to: x.t.name, sheet: x.sh.name }] };
 }
 
@@ -1206,7 +1315,7 @@ export function describe(st) {
       name: s.name, used: u ? rangeToString(u) : null, cells: n, formulas: f, freeze: s.freeze,
       merges: s.merges || [],
       conds: (s.conds || []).map((c) => ({ id: c.id, range: c.range, rules: c.rules.map(describeRule) })),
-      charts: (s.charts || []).map((c) => ({ id: c.id, type: c.type, title: c.title, source: c.table ? '@' + c.table : c.range || c.value, at: c.at })),
+      charts: (s.charts || []).map((c) => ({ id: c.id, type: c.type, title: c.title, source: c.type === 'map' ? c.layers.map((L) => '@' + L.table + (L.route ? ' (route)' : '')).join(' ') + (c.follow ? ` · follow ${c.follow}` : '') : c.type === 'viz' ? `${c.pack}(${c.value})` : c.table ? '@' + c.table : c.range || c.value, at: c.at })),
       tables: (s.tables || []).map((t) => { const R = parseRange(t.range); return { name: t.name, range: t.range, rows: R.r2 - R.r1, columns: tableColumns(s, R) }; }),
     };
   });

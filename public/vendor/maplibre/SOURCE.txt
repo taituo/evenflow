@@ -1,0 +1,2 @@
+maplibre-gl-js v5.6.0 — dist.zip from https://github.com/maplibre/maplibre-gl-js/releases/tag/v5.6.0 (maplibre-gl.js, maplibre-gl.css, LICENSE.txt). Unmodified.
+Map tiles at runtime: OpenFreeMap (https://openfreemap.org), data © OpenStreetMap contributors.
