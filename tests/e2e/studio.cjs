@@ -20,11 +20,12 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
   const B = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 50; i++) { try { await fetch(B + '/api/help'); break; } catch { await sleep(100); } }
   const api = async (p, body) => { const r = await fetch(B + p, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); const t = await r.text(); try { return JSON.parse(t); } catch { return t; } };
-  const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('response', (r) => { if (r.status() >= 400 && !/favicon/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
   const step = async (name, fn) => { process.stdout.write(`• ${name} … `); await fn(); console.log('ok'); };
   try {
     await page.goto(B + '/studio');
@@ -92,7 +93,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     await step('fork from a diff card makes a second box with a fork link', async () => {
       await page.locator('.dcard').nth(1).locator('[data-x="fork"]').click();
       await until(async () => (await page.locator('.st-agent').count()) === 2, 8000, 'fork box');
-      await page.waitForSelector('.st-links path');
+      await page.waitForSelector('.st-links path', { state: 'attached' });
     });
 
     await step('⌘K spotlight runs a command (review) and SQL into a note', async () => {
@@ -108,12 +109,62 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
       await until(async () => (await page.locator('.st-panel.sql').count()) === 1, 5000, 'sql panel');
     });
 
+    await step('a real terminal in the box\'s worktree: ⌥T, then point + type', async () => {
+      await page.keyboard.press('Escape');
+      const ag = await page.locator('.st-agent').first().boundingBox();
+      await page.mouse.move(ag.x + ag.width / 2, ag.y + 60);
+      await page.keyboard.press('Alt+KeyT');
+      await page.waitForSelector('.st-panel.terminal .vt');
+      await sleep(900);
+      const t = await page.locator('.st-panel.terminal').boundingBox();
+      await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+      await page.keyboard.type('echo studio-$((6*7))');
+      await page.keyboard.press('Enter');
+      await until(async () => /studio-42/.test(await page.locator('.st-panel.terminal .vt').textContent()), 8000, 'shell output in the panel');
+    });
+
+    await step('select text + S grabs it as a snippet panel', async () => {
+      const n0 = await page.locator('.st-panel.snippet, .st-panel.note').count();
+      await page.evaluate(() => { const td = [...document.querySelectorAll('.dfile td.c')].find((x) => x.textContent.includes('return')); const r = document.createRange(); r.selectNodeContents(td); getSelection().removeAllRanges(); getSelection().addRange(r); });
+      await page.mouse.move(1500, 500);
+      await page.locator('.st').press('s');
+      await until(async () => (await page.locator('.st-panel.snippet, .st-panel.note').count()) > n0, 4000, 'snippet panel');
+    });
+
+    await step('arrange (L → Grid) moves every box without overlaps; the theme switches', async () => {
+      await page.locator('[data-h="arrange"]').click();
+      await page.locator('.st-pick button', { hasText: 'Grid' }).click();
+      await sleep(400);
+      const boxes = await page.locator('.st-agent').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.x, r.y, r.width, r.height]));
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const [x1, y1, w1, h1] = boxes[i], [x2, y2, w2, h2] = boxes[j];
+        assert.ok(x1 + w1 <= x2 + 1 || x2 + w2 <= x1 + 1 || y1 + h1 <= y2 + 1 || y2 + h2 <= y1 + 1, 'no overlap');
+      }
+      await page.locator('[data-h="theme"]').click();
+      const t1 = await page.locator('.st').getAttribute('data-theme');
+      await page.locator('[data-h="theme"]').click();
+      const t2 = await page.locator('.st').getAttribute('data-theme');
+      assert.notEqual(t1, t2);
+    });
+
+    await step('idle: panels fade one by one and the shader stays; any input wakes it', async () => {
+      await page.keyboard.press('Control+k');
+      await page.keyboard.type('screensaver now');
+      await page.keyboard.press('Enter');
+      await until(async () => (await page.locator('.st.idle').count()) === 1 && (await page.locator('.st-agent.fade').count()) >= 1, 6000, 'idle');
+      await sleep(2500);
+      await page.screenshot({ path: path.join(SHOTS, '4-idle.png') });
+      assert.ok((await page.locator('.st-ticker .t').count()) >= 1, 'agents float over the shader');
+      await page.mouse.move(400, 400);
+      await until(async () => (await page.locator('.st.idle').count()) === 0, 3000, 'awake');
+    });
+
     await step('zooming out turns boxes into readable tiles', async () => {
       await page.mouse.move(1280, 500);
       await page.keyboard.down('Control');
       for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, 240); await sleep(30); }
       await page.keyboard.up('Control');
-      await until(async () => (await page.locator('.st-agent.lod-chip').count()) === 2, 3000, 'chip LOD');
+      await until(async () => (await page.locator('.st-agent.lod-chip').count()) === (await page.locator('.st-agent').count()), 3000, 'chip LOD');
       await page.keyboard.press('Escape');
       await sleep(500);
       await page.screenshot({ path: path.join(SHOTS, '3-studio.png') });

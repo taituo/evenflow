@@ -5,10 +5,11 @@ export const type = 'studio';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const num = (v, d) => (Number.isFinite(+v) ? Math.round(+v) : d);
-const AGENT_KEYS = ['name', 'color', 'x', 'y', 'w', 'h', 'scope', 'preset', 'command', 'cwd', 'branch', 'worktree', 'forkOf', 'collapsed'];
+const AGENT_KEYS = ['name', 'color', 'x', 'y', 'w', 'h', 'scope', 'preset', 'command', 'cwd', 'branch', 'worktree', 'forkOf', 'collapsed', 'sparse', 'why', 'role'];
 const PANEL_KEYS = ['title', 'text', 'kind', 'x', 'y', 'w', 'h', 'color', 'source', 'pinned'];
 
-export function create(title) { return { type, title: title || 'Studio', root: null, agents: [], panels: [] }; }
+export const PANEL_KINDS = ['note', 'review', 'prompt', 'sql', 'snippet', 'terminal', 'preview', 'map'];
+export function create(title) { return { type, title: title || 'Studio', root: null, agents: [], panels: [], layouts: [] }; }
 
 function cleanAgent(a) {
   if (!a || typeof a.id !== 'string' || !/^[\w-]{1,40}$/.test(a.id)) throw new Error('agent needs an id ([A-Za-z0-9_-])');
@@ -18,12 +19,13 @@ function cleanAgent(a) {
     preset: a.preset ? String(a.preset).slice(0, 40) : null, command: a.command ? String(a.command).slice(0, 500) : null,
     cwd: a.cwd ? String(a.cwd) : null, branch: a.branch ? String(a.branch).slice(0, 120) : null, worktree: a.worktree !== false,
     scope: Array.isArray(a.scope) ? a.scope.map(String).slice(0, 20) : [], forkOf: a.forkOf || null, collapsed: !!a.collapsed,
+    sparse: Array.isArray(a.sparse) && a.sparse.length ? a.sparse.map(String).slice(0, 50) : null, why: a.why ? String(a.why).slice(0, 600) : null, role: a.role ? String(a.role).slice(0, 40) : null,
   };
 }
 function cleanPanel(p) {
   if (!p || typeof p.id !== 'string' || !/^[\w-]{1,40}$/.test(p.id)) throw new Error('panel needs an id');
   return {
-    id: p.id, title: String(p.title ?? '').slice(0, 120), text: String(p.text ?? '').slice(0, 200000), kind: ['note', 'review', 'prompt', 'sql'].includes(p.kind) ? p.kind : 'note',
+    id: p.id, title: String(p.title ?? '').slice(0, 120), text: String(p.text ?? '').slice(0, 200000), kind: PANEL_KINDS.includes(p.kind) ? p.kind : 'note',
     x: num(p.x, 0), y: num(p.y, 0), w: Math.max(140, num(p.w, 320)), h: Math.max(80, num(p.h, 200)),
     color: /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : null, source: p.source || null, pinned: p.pinned || null,
   };
@@ -73,6 +75,24 @@ export function apply(st, op) {
       const ch = { k: 'panel', action: 'update', id: p.id, title: p.title, keys: Object.keys(old) };
       if ('text' in old) { ch.old = String(old.text ?? '').slice(0, 200); ch.new = p.text.slice(0, 200); }
       return done([{ op: 'updatePanel', id: p.id, set: old }], [ch]);
+    }
+    case 'saveLayout': {
+      const name = String(op.name || '').trim().slice(0, 40);
+      if (!name) throw new Error('layout needs a name');
+      st.layouts ||= [];
+      const i = st.layouts.findIndex((l) => l.name === name);
+      const old = i >= 0 ? clone(st.layouts[i]) : null;
+      const items = {};
+      for (const [id, r] of Object.entries(op.items || {})) items[id] = { x: num(r.x, 0), y: num(r.y, 0), w: num(r.w, 400), h: num(r.h, 300) };
+      const L = { name, items };
+      if (i >= 0) st.layouts[i] = L; else st.layouts.push(L);
+      return done([old ? { op: 'saveLayout', ...old } : { op: 'removeLayout', name }], [{ k: 'layout', action: old ? 'update' : 'add', name }]);
+    }
+    case 'removeLayout': {
+      const i = (st.layouts || []).findIndex((l) => l.name === op.name);
+      if (i < 0) throw new Error(`no layout "${op.name}"`);
+      const [old] = st.layouts.splice(i, 1);
+      return done([{ op: 'saveLayout', ...old }], [{ k: 'layout', action: 'remove', name: old.name }]);
     }
     case 'setRoot': {
       const old = st.root;

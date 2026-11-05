@@ -11,11 +11,14 @@
 //   deps / riippuvuus     touch package.json                   → the deps monitor goes amber
 //   review / arvioi       read the diff in the prompt and answer with a review (no edits)
 //   slow / hidas          take its time (to try cancel / steering)
+//   alternative / vaihtoehto   call the studio's MCP tool studio_fork: spin off a copy to try another approach
+//   reviewer / katselmoija      call studio_spawn: a reviewer sub-agent in the same folder
 //
 // MOCK_DELAY=ms per streamed chunk (default 45; 0 in tests).
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { spawn as spawnProc } from 'node:child_process';
 
 const DELAY = +(process.env.MOCK_DELAY ?? 45);
 const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -43,11 +46,12 @@ async function handle(m) {
   }
   if (m.method === 'session/new') {
     const id = 'mock-' + Math.random().toString(36).slice(2, 10);
-    sessions.set(id, { cwd: p.cwd, history: [], cancelled: false, broken: new Map(), n: 0 });
+    sessions.set(id, { cwd: p.cwd, history: [], cancelled: false, broken: new Map(), n: 0, mcp: (p.mcpServers || []).find((x) => x.name === 'studio') || null });
     return send({ id: m.id, result: { sessionId: id, modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] } } });
   }
   if (m.method === 'session/load') {
     const s = sessions.get(p.sessionId) || { cwd: p.cwd, history: [], cancelled: false, broken: new Map(), n: 0 };
+    s.mcp = (p.mcpServers || []).find((x) => x.name === 'studio') || s.mcp || null;
     sessions.set(p.sessionId, s);
     for (const u of s.history) update(p.sessionId, u);
     return send({ id: m.id, result: {} });
@@ -130,6 +134,37 @@ async function permission(sessionId, s, title, kind, cmd) {
   return { id, ok };
 }
 
+/** Call one tool on an MCP server given to us in session/new (stdio), the way a real agent would. */
+function mcpCall(server, name, args) {
+  return new Promise((ok, bad) => {
+    const env = { ...process.env };
+    for (const e of server.env || []) env[e.name] = e.value;
+    const p = spawnProc(server.command, server.args || [], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+    let buf = '';
+    p.stdout.on('data', (d) => {
+      buf += d;
+      for (const line of buf.split('\n').slice(0, -1)) {
+        const m = JSON.parse(line);
+        if (m.id === 2) { p.stdin.end(); m.error ? bad(new Error(m.error.message)) : ok(m.result.content.map((c) => c.text).join('\n')); }
+      }
+      buf = buf.slice(buf.lastIndexOf('\n') + 1);
+    });
+    p.on('error', bad);
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mock-acp' } } }) + '\n');
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } }) + '\n');
+  });
+}
+
+async function toolCall(sessionId, s, title, name, args) {
+  const id = 'call_' + (++s.n);
+  record(sessionId, s, { sessionUpdate: 'tool_call', toolCallId: id, title, kind: 'other', status: 'in_progress', rawInput: args });
+  let text, ok = true;
+  try { text = s.mcp ? await mcpCall(s.mcp, name, args) : 'no studio tools in this session'; ok = !!s.mcp; } catch (e) { text = e.message; ok = false; }
+  record(sessionId, s, { sessionUpdate: 'tool_call_update', toolCallId: id, status: ok ? 'completed' : 'failed', content: [{ type: 'content', content: { type: 'text', text } }] });
+  return ok;
+}
+
 const slug = (t) => (t.toLowerCase().normalize('NFKD').replace(/[^\w\s]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !STOP.has(w))[0] || 'feature').slice(0, 20);
 const STOP = new Set(['please', 'could', 'would', 'that', 'this', 'with', 'tehdään', 'tehdä', 'lisää', 'tämä', 'sitten', 'voisitko', 'implement', 'create', 'make', 'build', 'small', 'function', 'funktio', 'pieni']);
 const has = (t, ...w) => w.some((x) => t.includes(x));
@@ -153,6 +188,20 @@ async function turn(sessionId, s, raw) {
     if (added.length > 200) notes.push(`- Large change (${added.length} added lines): consider splitting it.`);
     const body = `Review of ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? ': ' + files.join(', ') : ''}.\n\n${notes.length ? notes.join('\n') : '- Nothing blocking. The change is small and focused.'}\n\nVerdict: ${notes.some((n) => /credential|No test/.test(n)) ? 'request changes' : 'looks good to merge'}.`;
     await say(sessionId, s, body);
+    return done();
+  }
+
+  if (has(t, 'alternative', 'vaihtoehto')) {
+    await think(sessionId, s, 'Two ways to do this. Rather than explain the other one, I can run it.');
+    await say(sessionId, s, 'There is a second approach worth trying: a pure function with no shared state. ');
+    const ok = await toolCall(sessionId, s, 'studio_fork', 'studio_fork', { reason: 'Same task as a pure function: no shared state, trivially testable — compare both diffs and keep the better one.', prompt: 'implement the helper as a pure function' });
+    await say(sessionId, s, ok ? 'I spun off a copy to try it next to me; compare the two when both are done.' : 'I could not reach the studio tools, so here is the idea in words instead.');
+    return done();
+  }
+
+  if (has(t, 'reviewer', 'katselmoija')) {
+    const ok = await toolCall(sessionId, s, 'studio_spawn', 'studio_spawn', { mode: 'same', role: 'review', reason: 'A second pair of eyes on the uncommitted work before I continue.', prompt: 'Review the current changes in this folder and list findings.' });
+    await say(sessionId, s, ok ? 'A reviewer is now looking at this folder next to me.' : 'No studio tools here.');
     return done();
   }
 

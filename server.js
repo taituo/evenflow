@@ -9,6 +9,7 @@ import { nlsTile, nlsKey } from './lib/tiles.js';
 import { Feeds, describeKinds } from './lib/feeds.js';
 import { Sim } from './lib/sim.js';
 import { Studio } from './lib/studio/index.js';
+import { previewTarget, proxyHttp, proxyUpgrade } from './lib/studio/preview.js';
 import { TYPES } from './public/shared/types/index.js';
 import { splitSheet } from './public/shared/a1.js';
 import { exportSheet } from './public/shared/export.js';
@@ -21,6 +22,17 @@ const PUBLIC = path.join(ROOT, 'public');
 const PORT = +(process.env.PORT || 3210);
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA = path.resolve(process.env.CANVAS_DATA || path.join(ROOT, 'data'));
+const tokenNow = () => process.env.SPREAD_TOKEN || null;   // set it to serve beyond localhost (e.g. a VPS reached over a tunnel or a LAN)
+
+/** With SPREAD_TOKEN set, every request needs it: ?token= once (becomes a cookie), the cookie, or "Authorization: Bearer". */
+function authorized(req, u) {
+  const TOKEN = tokenNow();
+  if (!TOKEN) return true;
+  const ok = (t) => t && t.length === TOKEN.length && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1];
+  const cookie = /(?:^|;\s*)spread_token=([^;]+)/.exec(req.headers.cookie || '')?.[1];
+  return ok(u.searchParams.get('token')) || ok(bearer) || ok(cookie && decodeURIComponent(cookie));
+}
 
 /** A point in time: epoch ms, ISO, "v123" (that version), "-90m" / "-2h" / "-1d" (ago), "14:30" (today, server time), "m3" (a milestone). */
 export function parseWhen(x, store) {
@@ -86,7 +98,7 @@ export function createServer(store) {
       const ic = { green: '✓', amber: '⚠', red: '✗', running: '…', skip: '–' };
       const d = studio.studioDoc(st.doc);
       send(res, 200, [`studio [${st.doc}] root ${st.root || '(not set)'} · presets ${Object.keys(st.presets).join(', ')}`,
-        ...st.agents.map((a) => { const def = d.agents.find((x) => x.id === a.id); const last = a.snapshots.at(-1); return `${def.name} [${a.id}] ${a.status}${a.queue ? ` (+${a.queue} queued)` : ''} · turn ${a.turn} · ${a.snapshots.length} snapshots${last ? ` (last #${last.n} ${last.reason})` : ''}${def.branch ? ' · ' + def.branch : ''}${def.forkOf ? ` · fork of ${def.forkOf.agent}#${def.forkOf.snap}` : ''}\n    lights: ${a.lights.map((m) => `${m.monitor} ${ic[m.level] || m.level}`).join('  ') || '–'}${a.subtitle ? `\n    said: ${a.subtitle}` : ''}${a.plan ? `\n    plan: ${a.plan.map((p) => `${p.status === 'completed' ? '☑' : p.status === 'in_progress' ? '▸' : '☐'} ${p.content}`).join(' · ')}` : ''}`; }),
+        ...st.agents.map((a) => { const def = d.agents.find((x) => x.id === a.id); const last = a.snapshots.at(-1); return `${def.name} [${a.id}] ${a.status}${a.queue ? ` (+${a.queue} queued)` : ''} · turn ${a.turn} · ${a.snapshots.length} snapshots${last ? ` (last #${last.n} ${last.reason})` : ''}${def.branch ? ' · ' + def.branch : ''}${def.forkOf ? ` · ${def.forkOf.kind === 'spawn' ? 'started by' : 'fork of'} ${d.agents.find((x) => x.id === def.forkOf.agent)?.name || def.forkOf.agent}${def.forkOf.snap != null ? '#' + def.forkOf.snap : ''}${def.forkOf.mode === 'same' ? ' (same folder)' : ''}` : ''}${def.why ? `\n    why: ${def.why}` : ''}\n    lights: ${a.lights.map((m) => `${m.monitor} ${ic[m.level] || m.level}`).join('  ') || '–'}${a.subtitle ? `\n    said: ${a.subtitle}` : ''}${a.plan ? `\n    plan: ${a.plan.map((p) => `${p.status === 'completed' ? '☑' : p.status === 'in_progress' ? '▸' : '☐'} ${p.content}`).join(' · ')}` : ''}`; }),
         st.gates.length ? 'gates:' : 'no open gates', ...st.gates.map((g) => `  ${g.blocking ? '■' : '□'} ${g.id} ${d.agents.find((x) => x.id === g.agent)?.name || g.agent} ${g.kind}: ${g.title}${g.detail ? ' — ' + g.detail : ''}${g.kind === 'permission' ? `  [${g.json.options.map((o) => o.optionId).join(' | ')}]` : ''}`),
         st.target ? `pointing at: ${st.target.kind} ${st.target.id}` : ''].filter(Boolean).join('\n'));
     },
@@ -146,6 +158,21 @@ export function createServer(store) {
     'POST /api/studio/rewind': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await r.rewind(+String(b.snap).replace(/^#/, ''))); },
     'POST /api/studio/fork': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.fork(r.id, { ...b, snap: b.snap == null ? null : +String(b.snap).replace(/^#/, '') })); },
     'POST /api/studio/review': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.review(r.id, b)); },
+    'POST /api/studio/spawn': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.spawn(r.id, b)); },
+    'POST /api/studio/view': async (req, res) => send(res, 200, studio.view(await body(req))),
+    'GET /api/studio/codemap': async (req, res, u) => { const q = u.searchParams; send(res, 200, await studio.codemap({ doc: q.get('doc'), agent: q.get('agent'), snap: q.get('snap'), paths: q.get('paths') })); },
+    'POST /api/studio/term': async (req, res) => {
+      const b = await body(req);
+      const d = studio.studioDoc(b.doc || studio.ensureDoc().id);
+      const p = d.panels.find((x) => x.id === b.panel);
+      if (!p || p.kind !== 'terminal') throw httpErr(404, 'No terminal panel ' + b.panel);
+      const src = p.source || {};
+      const cwd = src.agent ? studio.get(src.agent).cwd : src.cwd || (await studio.root(d));
+      send(res, 200, studio.terms.open({ id: `${d.id}:${p.id}`, doc: d.id, cwd, cmd: src.cmd, cols: b.cols, rows: b.rows }));
+    },
+    'GET /api/studio/term': (req, res, u) => send(res, 200, studio.terms.buffer(u.searchParams.get('id')) || { buf: '', exited: null }),
+    'POST /api/studio/term/input': async (req, res) => { const b = await body(req); studio.terms.input(b.id, b.data); send(res, 200, { ok: true }); },
+    'POST /api/studio/term/resize': async (req, res) => { const b = await body(req); studio.terms.resize(b.id, b.cols, b.rows); send(res, 200, { ok: true }); },
     'POST /api/studio/target': async (req, res) => send(res, 200, { target: studio.setTarget(await body(req)) }),
     'GET /api/studio/target': (req, res) => send(res, 200, { target: studio.target }),
     'POST /api/studio/say': async (req, res) => { const b = await body(req); send(res, 200, await studio.say(b.text, b.target, b.by || 'voice')); },
@@ -431,9 +458,29 @@ export function createServer(store) {
     },
   };
 
-  return http.createServer(async (req, res) => {
+  const srv = http.createServer(async (req, res) => {
     const u = new URL(req.url, 'http://x');
     try {
+      if (!authorized(req, u)) {
+        res.writeHead(401, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end('<body style="font:15px system-ui;display:grid;place-items:center;height:90vh;margin:0;color:#52525b">This Spread needs a token: open it with <code>?token=…</code></body>');
+      }
+      const TOKEN = tokenNow();
+      if (TOKEN && u.searchParams.has('token') && req.method === 'GET' && !u.pathname.startsWith('/api/')) {
+        u.searchParams.delete('token');
+        res.writeHead(302, { location: u.pathname + (u.search || '') + u.hash, 'set-cookie': `spread_token=${encodeURIComponent(TOKEN)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000` });
+        return res.end();
+      }
+      if (u.pathname.startsWith('/preview/')) {
+        const t = previewTarget(req, u, srv.address()?.port);
+        if (!t) throw httpErr(400, 'Bad preview port');
+        return proxyHttp(req, res, t);
+      }
+      {
+        // a page shown in a preview asks for its own absolute paths (/app.js, /@vite/client): they are its, not ours
+        const t = !u.pathname.startsWith('/api/') && previewTarget(req, u, srv.address()?.port);
+        if (t?.via === 'referer') return proxyHttp(req, res, t);
+      }
       if (req.method === 'OPTIONS') {
         res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE', 'access-control-allow-headers': 'content-type' });
         return res.end();
@@ -449,7 +496,7 @@ export function createServer(store) {
       }
       if (u.pathname.startsWith('/assets/')) {
         const f = path.join(store.dir, 'assets', path.basename(u.pathname));
-        if (!fs.existsSync(f)) throw httpErr(404, 'No such asset');
+        if (!fs.existsSync(f)) { const t = previewTarget(req, u, srv.address()?.port); if (t) return proxyHttp(req, res, t); throw httpErr(404, 'No such asset'); }
         const ext = path.extname(f).slice(1);
         res.writeHead(200, { 'content-type': { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' }[ext] || 'application/octet-stream', 'cache-control': 'max-age=31536000, immutable' });
         return fs.createReadStream(f).pipe(res);
@@ -460,7 +507,11 @@ export function createServer(store) {
       if (p === '/remote' || p === '\\remote') p = '/remote.html';
       if (p === '/studio' || p === '\\studio') p = '/studio.html';
       const f = path.join(PUBLIC, p);
-      if (!f.startsWith(PUBLIC) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) throw httpErr(404, 'Not found');
+      if (!f.startsWith(PUBLIC) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) {
+        const t = previewTarget(req, u, srv.address()?.port);   // a previewed app asking for its own absolute paths
+        if (t) return proxyHttp(req, res, t);
+        throw httpErr(404, 'Not found');
+      }
       res.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-cache' });
       fs.createReadStream(f).pipe(res);
     } catch (e) {
@@ -470,6 +521,13 @@ export function createServer(store) {
       else res.end();
     }
   });
+  srv.on('upgrade', (req, socket, head) => {
+    const u = new URL(req.url, 'http://x');
+    const t = authorized(req, u) && previewTarget(req, u, srv.address()?.port);
+    if (t) proxyUpgrade(req, socket, head, t); else socket.destroy();
+  });
+  srv.on('listening', () => { const a = srv.address(); if (a && typeof a === 'object') studio.url = `http://127.0.0.1:${a.port}`; });
+  return srv;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
@@ -477,7 +535,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const srv = createServer(store);
   srv.listen(PORT, HOST, () => {
     console.log(`Spread  http://${HOST}:${PORT}   studio http://${HOST}:${PORT}/studio   data: ${DATA}`);
-    if (HOST !== '127.0.0.1' && HOST !== 'localhost') console.warn('WARNING: no auth. Do not expose to untrusted networks.');
+    if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !tokenNow()) console.warn('WARNING: no auth. Set SPREAD_TOKEN before exposing this beyond localhost.');
   });
   const bye = () => { store.studio?.close(); store.flush(); process.exit(0); };
   process.on('SIGINT', bye);

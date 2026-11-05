@@ -281,7 +281,9 @@ POST /api/studio/prompt {"agent":"<id>","text":"…"}  (queued while it works)
 GET  /api/studio/events?agent=<id>&format=text      its transcript
 GET  /api/studio/diff?agent=<id>&from=base&to=last&format=text
 POST /api/studio/review {"agent":"<id>"}            a reviewer writes findings into a panel
-POST /api/studio/fork {"agent":"<id>","snap":3}     ·  POST /api/studio/rewind {"agent":"<id>","snap":3}
+POST /api/studio/fork {"agent":"<id>","snap":3,"reason":"why"}  ·  POST /api/studio/rewind {"agent":"<id>","snap":3}
+POST /api/studio/spawn {"agent":"<id>","mode":"same","role":"review"}   a sub-agent in the same folder (or "worktree")
+POST /api/studio/view {"open":{"kind":"preview","url":"http://localhost:5173"}}   ·  {"arrange":"tree"} · {"focus":{"agent":"<id>"}}
 POST /api/studio/sql {"sql":"SELECT … FROM events / snapshots / monitors / gates"}   read-only
 ```
 

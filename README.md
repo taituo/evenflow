@@ -56,7 +56,7 @@ interface they're good at, on top of one versioned document:
 
 [![Studio](docs/studio.jpg)](STUDIO.md)
 
-`/studio` is a full-screen canvas for coding agents. Draw a box and an [ACP](https://agentclientprotocol.com) agent (Kiro CLI, a Claude Code or Gemini ACP adapter, or the built-in mock) starts in its own git worktree. Point at a box and type (or talk) to steer it. Every step is SQL, every file change a snapshot in a shadow git, checked by deterministic monitors (syntax, churn, secrets, tests, deps, scope, your own commands). The places where an agent needs you show up as gates. All diffs scroll at the bottom on one timeline: scrub back, rewind a box, or fork a new one from any moment. → **[STUDIO.md](STUDIO.md)**
+`/studio` is a full-screen canvas for coding agents, in light and dark. Draw a box and an [ACP](https://agentclientprotocol.com) agent (Kiro CLI, a Claude Code or Gemini ACP adapter, or the built-in mock) starts in its own git worktree — or a sparse slice of a monorepo. Point at a box and type (or talk) to steer it; agents get tools of their own to spin off a copy, start a reviewer, or put a preview on the screen. Every step is SQL, every file change a snapshot in a shadow git, checked by deterministic monitors; where an agent needs you shows up as a gate. All diffs scroll at the bottom on one timeline you can replay, rewind or fork from. Real terminals, live previews (dev servers, voxl desktops), code maps, notes and snippets sit on the same canvas; idle, it turns into a shader screensaver of the agents at work. Run it on a Linux box and look at it from your Mac with `node bin/remote.mjs me@box`. → **[STUDIO.md](STUDIO.md)**
 
 ## The grid
 

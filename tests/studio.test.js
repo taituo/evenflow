@@ -11,6 +11,9 @@ import { splitCommand } from '../lib/studio/acp.js';
 import { Shadow, git } from '../lib/studio/shadow.js';
 import { checkSyntax, inScope } from '../lib/studio/monitors.js';
 import * as studioType from '../public/shared/types/studio.js';
+import { arrange, applyLayout, snapshotLayout } from '../public/canvases/studio/layout.js';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
 
 process.env.MOCK_DELAY = '0';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-'));
@@ -58,6 +61,25 @@ test('studio layout ops are exact inverses', () => {
   for (const op of inv) studioType.apply(d, op);
   assert.equal(JSON.stringify(d), before);
   assert.throws(() => studioType.apply(d, { op: 'addAgent', agent: { id: 'bad id!' } }), /id/);
+});
+
+test('layouts: arrange modes, saved layouts restore positions, all as undoable ops', () => {
+  const d = studioType.create('S');
+  for (const [i, id] of ['a1', 'a2', 'a3'].entries()) studioType.apply(d, { op: 'addAgent', agent: { id, name: id, x: i * 37, y: i * 11, w: 600, h: 400, forkOf: id === 'a3' ? { agent: 'a1', snap: 2 } : null } });
+  studioType.apply(d, { op: 'addPanel', panel: { id: 'p1', kind: 'terminal', source: { agent: 'a1' }, x: 5, y: 5 } });
+  const saved = snapshotLayout(d);
+  studioType.apply(d, { op: 'saveLayout', name: 'mess', items: saved });
+  for (const op of arrange(d, 'tree')) studioType.apply(d, op);
+  const a1 = d.agents.find((a) => a.id === 'a1'), a3 = d.agents.find((a) => a.id === 'a3');
+  assert.ok(a3.x > a1.x + a1.w, 'a fork sits to the right of its parent');
+  const p1 = d.panels[0];
+  assert.ok(p1.x >= a1.x + a1.w || p1.y >= a1.y + a1.h, 'its terminal moved next to it');
+  for (const op of applyLayout(d, d.layouts[0])) studioType.apply(d, op);
+  assert.deepEqual(snapshotLayout(d), saved, 'the saved layout comes back exactly');
+  const inv = studioType.apply(d, { op: 'removeLayout', name: 'mess' }).inverse;
+  assert.equal(d.layouts.length, 0);
+  for (const op of inv) studioType.apply(d, op);
+  assert.equal(d.layouts[0].name, 'mess');
 });
 
 test('syntax checks and scope globs', async () => {
@@ -159,7 +181,7 @@ test('fork from an older snapshot: a new box, its own branch, the files of that 
   await idle(r.id);
   assert.ok(fs.existsSync(path.join(r.cwd, 'src', 'parser.js')), 'the fork did the new task, not the old one');
   const doc = (await getJ('/api/doc?id=studio')).doc;
-  assert.deepEqual(doc.agents.find((a) => a.id === r.id).forkOf, { agent: A, snap: at.n });
+  assert.deepEqual(doc.agents.find((a) => a.id === r.id).forkOf, { agent: A, snap: at.n, kind: 'fork', by: 'user' });
   assert.match(await getT(`/api/studio/events?agent=${r.id}&format=text`), /Forked from Auth/);
 });
 
@@ -216,4 +238,135 @@ test('a missing agent command fails visibly, as a gate', async () => {
   assert.equal((await agent(r.id)).status, 'error');
   await fetch(`${base}/api/studio/agents?id=${r.id}`, { method: 'DELETE' });
   assert.ok(!(await state()).agents.some((a) => a.id === r.id));
+});
+
+// ---------------------------------------------------------------- tools for agents, terminals, previews, maps, remote
+
+test('sub-agents: a reviewer in the same folder, a helper in its own worktree; agents\' spin-offs open an info gate', async () => {
+  const same = await post('/api/studio/spawn', { agent: A, mode: 'same', role: 'review', reason: 'second pair of eyes', by: `agent:${A}` });
+  const a = await agent(A);
+  assert.equal(same.cwd, a.cwd, 'same folder');
+  const doc = (await getJ('/api/doc?id=studio')).doc;
+  const def = doc.agents.find((x) => x.id === same.id);
+  assert.deepEqual([def.role, def.why, def.forkOf.kind, def.forkOf.mode], ['review', 'second pair of eyes', 'spawn', 'same']);
+  assert.ok((await gates(A, 'info')).some((g) => g.json.agent === same.id), 'the user sees that an agent started it, and why');
+  const wt = await post('/api/studio/spawn', { agent: A, mode: 'worktree', prompt: 'implement docs', reason: 'docs in parallel' });
+  assert.notEqual(wt.cwd, a.cwd);
+  assert.ok(fs.existsSync(path.join(wt.cwd, 'src', 'greeting.js')), 'it starts from the box\'s files');
+  await idle(same.id);
+  await until(async () => (await gates(wt.id, 'permission')).length || (await gates(wt.id, 'turn')).length, 8000, 'worktree sub-agent working');
+});
+
+test('the agent\'s own tools over MCP: status, note, fork with a reason the user sees', async () => {
+  const call = (name, args) => new Promise((ok, bad) => {
+    const p = spawn(process.execPath, ['bin/studio-mcp.mjs'], { env: { ...process.env, STUDIO_URL: base, STUDIO_AGENT: A }, stdio: ['pipe', 'pipe', 'inherit'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; const l = out.split('\n').find((x) => x.includes('"id":2')); if (l) { p.stdin.end(); ok(JSON.parse(l).result); } });
+    p.on('error', bad);
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: name === 'list' ? 'tools/list' : 'tools/call', params: { name, arguments: args } }) + '\n');
+  });
+  const list = await call('list');
+  assert.deepEqual(list.tools.map((t) => t.name), ['studio_status', 'studio_fork', 'studio_spawn', 'studio_show', 'studio_note', 'studio_prompt']);
+  assert.match((await call('studio_status', {})).content[0].text, /Auth \[/);
+  const note = await call('studio_note', { title: 'Decision', text: 'pick A or B' });
+  assert.match(note.content[0].text, /^Note p/);
+  const f = await call('studio_fork', { reason: 'try the pure version', prompt: 'implement a pure helper' });
+  assert.match(f.content[0].text, /^Started Auth/);
+  const doc = (await getJ('/api/doc?id=studio')).doc;
+  assert.ok(doc.agents.some((a) => a.why === 'try the pure version' && a.forkOf.agent === A && a.forkOf.by === `agent:${A}`));
+  // the mock agent itself calls studio_fork through the MCP server the studio gave its session
+  const before = doc.agents.length;
+  await post('/api/studio/prompt', { agent: A, text: 'try an alternative', by: 'user' });
+  await until(async () => (await getJ('/api/doc?id=studio')).doc.agents.length > before, 8000, 'the agent spun off a copy by itself');
+  const ev = await getT(`/api/studio/events?agent=${A}&format=text`);
+  assert.match(ev, /tool completed studio_fork/);
+});
+
+test('view commands are headless: open panels, arrange in the doc, and a code map that knows who touched what', async () => {
+  const r = await post('/api/studio/view', { open: { kind: 'map', agent: A }, by: 'agent' });
+  let doc = (await getJ('/api/doc?id=studio')).doc;
+  assert.equal(doc.panels.find((p) => p.id === r.panel).kind, 'map');
+  const moved = await post('/api/studio/view', { arrange: 'grid' });
+  assert.ok(moved.moved >= 1);
+  doc = (await getJ('/api/doc?id=studio')).doc;
+  const boxes = doc.agents.map((a) => [a.x, a.y, a.w, a.h]);
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const [x1, y1, w1, h1] = boxes[i], [x2, y2, w2, h2] = boxes[j];
+    assert.ok(x1 + w1 <= x2 || x2 + w2 <= x1 || y1 + h1 <= y2 || y2 + h2 <= y1, 'grid boxes do not overlap');
+  }
+  const map = await getJ(`/api/studio/codemap?agent=${A}`);
+  assert.ok(map.files.some((f) => f.path === 'src/greeting.js' && f.size > 0));
+  assert.ok(map.touched['src/greeting.js'][A].adds > 0);
+  const sliced = await getJ(`/api/studio/codemap?agent=${A}&paths=test`);
+  assert.ok(sliced.files.length && sliced.files.every((f) => f.path.startsWith('test/')));
+});
+
+test('a real terminal in a box\'s worktree (PTY), with scrollback for late viewers', async () => {
+  const r = await post('/api/studio/view', { open: { kind: 'terminal', agent: A } });
+  const id = `studio:${r.panel}`;
+  const o = await post('/api/studio/term', { doc: 'studio', panel: r.panel, cols: 90, rows: 20 });
+  assert.equal(o.cwd, (await agent(A)).cwd);
+  await post('/api/studio/term/input', { id, data: 'echo "tty=$(test -t 0 && echo yes) $((6*7)) $(basename $PWD)"\r' });
+  const buf = await until(async () => { const b = (await getJ(`/api/studio/term?id=${encodeURIComponent(id)}`)).buf; return /tty=yes 42 a/.test(b) && b; }, 8000, 'shell output');
+  assert.match(buf, new RegExp(`tty=yes 42 ${A}`));
+  await post('/api/studio/term/resize', { id, cols: 120, rows: 30 });
+  await post('/api/studio/term/input', { id, data: 'stty size\r' });
+  await until(async () => /30 120/.test((await getJ(`/api/studio/term?id=${encodeURIComponent(id)}`)).buf), 5000, 'resize reached the pty');
+  await fetch(`${base}/api/ops`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ doc: 'studio', ops: [{ op: 'removePanel', id: r.panel }] }) });
+  await until(async () => !(await getJ(`/api/studio/term?id=${encodeURIComponent(id)}`)).buf, 3000, 'terminal closed with its panel');
+});
+
+test('previews: a local app through /preview/<port>/, its absolute paths and its WebSocket too', async () => {
+  const app = http.createServer((req, res) => {
+    if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html', 'x-frame-options': 'DENY' }); return res.end('<script src="/app.js"></script>hello preview'); }
+    if (req.url === '/app.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end('console.log(1)'); }
+    res.writeHead(404); res.end();
+  });
+  app.on('upgrade', (req, sock) => { sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'); sock.end('pong'); });
+  await new Promise((ok) => app.listen(0, '127.0.0.1', ok));
+  const port = app.address().port;
+  test.after(() => app.close());
+  const r = await fetch(`${base}/preview/${port}/`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('x-frame-options'), null, 'it can live in a panel');
+  assert.match(await r.text(), /hello preview/);
+  const js = await fetch(`${base}/app.js`, { headers: { referer: `${base}/preview/${port}/` } });
+  assert.equal(await js.text(), 'console.log(1)', 'absolute paths follow the page they came from');
+  const ws = await new Promise((ok) => {
+    const req = http.request({ host: '127.0.0.1', port: new URL(base).port, path: `/preview/${port}/ws`, headers: { connection: 'Upgrade', upgrade: 'websocket' } });
+    req.on('upgrade', (res, sock, head) => { let d = head.toString(); sock.on('data', (x) => (d += x)); sock.on('end', () => ok(`${res.statusCode} ${d}`)); });
+    req.end();
+  });
+  assert.equal(ws, '101 pong');
+  const gone = await fetch(`${base}/preview/1/`);
+  assert.equal(gone.status, 502);
+  app.close();
+});
+
+test('sparse worktrees: a box can get only a slice of a monorepo', async () => {
+  const root = (await state()).root;
+  fs.mkdirSync(path.join(root, 'services', 'auth'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'services', 'billing'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'services', 'auth', 'a.js'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(root, 'services', 'billing', 'b.js'), 'export const b = 1;\n');
+  await git(['add', '-A'], { cwd: root });
+  await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'services'], { cwd: root });
+  const r = await post('/api/studio/agents', { preset: 'mock', name: 'Slice', sparse: 'services/auth', start: false });
+  assert.ok(fs.existsSync(path.join(r.cwd, 'services', 'auth', 'a.js')));
+  assert.ok(!fs.existsSync(path.join(r.cwd, 'services', 'billing')), 'the rest of the monorepo is not checked out');
+  assert.deepEqual((await getJ('/api/doc?id=studio')).doc.agents.find((a) => a.id === r.id).sparse, ['services/auth']);
+});
+
+test('remote mode: with SPREAD_TOKEN every request needs the token (query once → cookie, or a bearer header)', async () => {
+  process.env.SPREAD_TOKEN = 'sekret-123';
+  try {
+    assert.equal((await fetch(`${base}/api/studio`)).status, 401);
+    assert.equal((await fetch(`${base}/api/studio`, { headers: { authorization: 'Bearer sekret-123' } })).status, 200);
+    const r = await fetch(`${base}/studio?token=sekret-123`, { redirect: 'manual' });
+    assert.equal(r.status, 302);
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    assert.equal((await fetch(`${base}/studio`, { headers: { cookie } })).status, 200);
+    assert.equal((await fetch(`${base}/studio`, { headers: { cookie: 'spread_token=wrong' } })).status, 401);
+  } finally { delete process.env.SPREAD_TOKEN; }
 });
