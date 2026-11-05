@@ -163,7 +163,7 @@ function renderDocs() {
   for (const d of S.docs) {
     const b = document.createElement('button');
     b.className = 'doctab' + (d.id === S.docId ? ' on' : '');
-    b.innerHTML = `<span class="ico">${d.type === 'sheet' ? '▦' : '¶'}</span>`;
+    b.innerHTML = `<span class="ico">${d.type === 'sheet' ? '▦' : d.type === 'studio' ? '◫' : '¶'}</span>`;
     b.append(d.title);
     b.title = `${d.title}  [${d.id}]`;
     b.onmousedown = (e) => e.preventDefault();
@@ -185,6 +185,7 @@ function renderDocs() {
   add.onclick = (e) => menu(e.clientX, e.clientY + 12, [
     { label: '▦  Spreadsheet', action: () => newDoc('sheet', 'Workbook') },
     { label: '¶  Text / notes', action: () => newDoc('text', 'Notes') },
+    { label: '◫  Studio — coding agents (full screen at /studio)', action: () => newDoc('studio', 'Studio') },
   ]);
   nav.append(add);
 }
@@ -266,6 +267,7 @@ function connect() {
       return;
     }
     if (e.type === 'focus') { if (e.doc === S.docId) S.view?.focus?.(e); return; }
+    if (e.type === 'studio') { S.view?.studio?.(e); return; }
     if (e.type === 'present' && e.screen && e.screen !== SCREEN.id) return;   // aimed at another screen
     if (e.type === 'present') {
       const go = () => S.view?.present?.(e);

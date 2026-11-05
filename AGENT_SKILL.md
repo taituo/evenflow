@@ -268,3 +268,21 @@ traffic lights: `cond {range, rules:[{when, value, value2?, light|style}], id?}`
 live: `liveLayout {order, spans (span 0.5 = small tile), hidden, flow, reveal, slots, links, fx}` · `panel {id, title, text, value, label, image, span, h}` · `removePanel {id}` ·
 `slide {id, index?, title, text, sheet, mode, focus, cards, bg:{image, filter, theme}, duration}` · `removeSlide {id}`.
 Text docs: `setText {text}` · `append {text}`. Every sheet op takes an optional `sheet`; cell keys may carry a sheet prefix.
+
+
+## Studio: driving other coding agents
+
+A studio canvas holds ACP coding agents (see STUDIO.md). An agent can orchestrate them over HTTP:
+
+```
+GET  /api/studio                                    who is doing what, their monitor lights, open gates
+POST /api/studio/agents {"preset":"kiro","name":"Tests","prompt":"…"}   a new box in its own worktree
+POST /api/studio/prompt {"agent":"<id>","text":"…"}  (queued while it works)
+GET  /api/studio/events?agent=<id>&format=text      its transcript
+GET  /api/studio/diff?agent=<id>&from=base&to=last&format=text
+POST /api/studio/review {"agent":"<id>"}            a reviewer writes findings into a panel
+POST /api/studio/fork {"agent":"<id>","snap":3}     ·  POST /api/studio/rewind {"agent":"<id>","snap":3}
+POST /api/studio/sql {"sql":"SELECT … FROM events / snapshots / monitors / gates"}   read-only
+```
+
+Gates that need a human (permissions) are answered by the person in the studio — don't answer them yourself unless asked.

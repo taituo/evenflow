@@ -22,6 +22,7 @@ npm run e2e        # 29 browser tests (Playwright): two users, Live, slides, tra
 ## Contents
 
 - [Why](#why)
+- [Studio: coding agents](#studio-coding-agents-on-a-canvas) · [STUDIO.md](STUDIO.md)
 - [The grid](#the-grid)
 - [Named tables](#named-tables-structured-data)
 - [Traffic lights](#traffic-lights)
@@ -50,6 +51,12 @@ interface they're good at, on top of one versioned document:
   not a dump of the sheet. Moves are one line. Recalculated formulas are listed separately.
 - **Everyone** gets **Live**: the same data as a real-time dashboard you can put on a TV, a phone, or a second monitor —
   and the agent can drive it.
+
+## Studio: coding agents on a canvas
+
+[![Studio](docs/studio.jpg)](STUDIO.md)
+
+`/studio` is a full-screen canvas for coding agents. Draw a box and an [ACP](https://agentclientprotocol.com) agent (Kiro CLI, a Claude Code or Gemini ACP adapter, or the built-in mock) starts in its own git worktree. Point at a box and type (or talk) to steer it. Every step is SQL, every file change a snapshot in a shadow git, checked by deterministic monitors (syntax, churn, secrets, tests, deps, scope, your own commands). The places where an agent needs you show up as gates. All diffs scroll at the bottom on one timeline: scrub back, rewind a box, or fork a new one from any moment. → **[STUDIO.md](STUDIO.md)**
 
 ## The grid
 
@@ -519,6 +526,10 @@ lib/store.js                  versioned op log, atomic batches, recalculation di
 lib/sql.js                    tables ⇄ node:sqlite, write-back as table ops
 lib/format.js                 token-cheap text renderings for agents
 bin/cm.mjs                    the agent CLI
+lib/studio/                   coding agents: acp.js (ACP client) · index.js (boxes, worktrees, gates, fork, review)
+                              shadow.js (snapshots) · monitors.js · db.js (sessions as SQL)
+public/canvases/studio/       the studio canvas (semantic zoom, diff tray, timeline, spotlight)
+bin/mock-acp.mjs              a deterministic ACP agent for demos and tests
 server.js                     node:http — REST, SSE, static files
 ```
 

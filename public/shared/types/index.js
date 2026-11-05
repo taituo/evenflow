@@ -3,8 +3,9 @@
 // a browser view in public/canvases/<name>/view.js.
 import * as sheet from './sheet.js';
 import * as text from './text.js';
+import * as studio from './studio.js';
 
-export const TYPES = { sheet, text };
+export const TYPES = { sheet, text, studio };
 
 /** Apply one op to a doc. Handles the generic `__restore` op for any type. */
 export function applyDocOp(doc, op) {
