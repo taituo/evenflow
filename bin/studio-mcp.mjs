@@ -41,17 +41,18 @@ const TOOLS = [
   {
     name: 'studio_show',
     description: 'Control what the studio screens show. focus: an agent id, a panel id or "self". open: a panel — {kind:"preview", url} for a running web UI (e.g. http://localhost:5173), {kind:"terminal", cmd?} in your folder, {kind:"map", paths?} for a code map, {kind:"note", title, text}. arrange: "grid" | "row" | "tree" | "focus". scrub: a snapshot number of yours, or "live". fit: true. theme: "light" | "dark". tray: true/false.',
-    inputSchema: { type: 'object', properties: { ...agentProp, focus: { type: 'string' }, open: { type: 'object' }, arrange: { type: 'string' }, scrub: {}, fit: { type: 'boolean' }, theme: { type: 'string' }, tray: { type: 'boolean' } } },
+    inputSchema: { type: 'object', properties: { ...agentProp, focus: { type: 'string' }, open: { type: 'object' }, arrange: { type: 'string' }, scrub: {}, fit: { type: 'boolean' }, theme: { type: 'string' }, tray: { type: 'boolean' }, reason: { type: 'string', description: 'One short sentence shown on screen: why this view' } } },
     run: async (a) => {
       const self = a.agent || SELF;
       const b = { by: self ? `agent:${self}` : 'agent' };
-      if (a.focus) b.focus = a.focus === 'self' ? { agent: self } : a.focus.startsWith('p') ? { panel: a.focus } : { agent: a.focus };
+      if (a.focus) b.focus = a.focus === 'self' ? { agent: self } : /^p[0-9a-f]{8}$/.test(a.focus) ? { panel: a.focus } : { agent: a.focus };
       if (a.open) b.open = { agent: self || undefined, ...a.open };
       if (a.arrange) b.arrange = a.arrange;
-      if (a.scrub != null) b.scrub = a.scrub === 'live' ? null : { agent: self, snap: +a.scrub };
+      if (a.scrub != null) b.scrub = a.scrub === 'live' ? null : { agent: a.agent && a.agent !== SELF ? a.agent : a.focus && !/^p/.test(a.focus) ? a.focus : self, snap: +a.scrub };
       if (a.fit) b.fit = true;
       if (a.theme) b.theme = a.theme;
       if (a.tray != null) b.tray = a.tray;
+      if (a.reason) b.reason = a.reason;
       const r = await api('POST', '/api/studio/view', b);
       return r.panel ? `Opened panel ${r.panel}.` : 'Done.';
     },

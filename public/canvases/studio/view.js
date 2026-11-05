@@ -93,6 +93,11 @@ class StudioView {
     this.syncLayout(true);
     this.load();
     this.saver = new Saver(this);
+    this.renderDirector();
+    // tell the director the person is here, so it reports instead of moving the camera
+    const beat = () => { const now = Date.now(); if (now - (this.beatT || 0) > 4000) { this.beatT = now; this.ctx.post('/api/studio/activity', { doc: this.docId }).catch(() => {}); } };
+    for (const ev of ['pointerdown', 'keydown', 'wheel']) this.on(this.r, ev, beat, { passive: true });
+    this.on(this.r, 'pointermove', (e) => { if (e.buttons) beat(); }, { passive: true });
     this.tick = setInterval(() => { this.renderGates(); this.renderTimelineHead(); }, 15000);
   }
 
@@ -105,7 +110,7 @@ class StudioView {
       <div class="st-canvas"><div class="st-grid"></div><div class="st-world"><svg class="st-links"></svg></div></div>
       <div class="st-ticker"></div>
       <div class="st-hud"><div class="st-brand"><b>Studio</b><span class="root"></span></div>
-        <div class="st-seg"><span class="z"></span><button data-h="fit" title="Fit everything (Esc)">Fit</button><button data-h="arrange" title="Arrange boxes · saved layouts (L)">Arrange</button><button data-h="theme" title="Light / dark / system"></button><button data-h="spot" title="Spotlight">⌘K</button></div></div>
+        <div class="st-seg"><span class="z"></span><button data-h="fit" title="Fit everything (Esc)">Fit</button><button data-h="arrange" title="Arrange boxes · saved layouts (L)">Arrange</button><button data-h="director" title="Director: who runs the screen — you, the built-in rules, or a director agent (D)"></button><button data-h="theme" title="Light / dark / system"></button><button data-h="spot" title="Spotlight">⌘K</button></div></div>
       <div class="st-target" title="Typing and voice go here (point at a box to change)"><span>→</span><span class="chip">nothing yet</span></div>
       <div class="st-gates"></div>
       <div class="st-subs off"><div class="who"><i></i><span></span></div><div><span class="line"></span></div></div>
@@ -185,7 +190,7 @@ class StudioView {
     this.$('.st-seg').onclick = (e) => {
       const b = e.target.closest('button');
       if (!b) return;
-      ({ fit: () => this.fit(), arrange: () => this.arrangeMenu(b), theme: () => this.setTheme({ system: 'light', light: 'dark', dark: 'system' }[this.themePref]), spot: () => this.spotlight() })[b.dataset.h]?.();
+      ({ fit: () => this.fit(), arrange: () => this.arrangeMenu(b), director: () => this.directorMenu(b), theme: () => this.setTheme({ system: 'light', light: 'dark', dark: 'system' }[this.themePref]), spot: () => this.spotlight() })[b.dataset.h]?.();
     };
     // tray
     this.$('.st-thead .lbl').onclick = () => this.toggleTray();
@@ -321,8 +326,10 @@ class StudioView {
       else if (f?.agent) { this.zoomTo('agent', f.agent); this.setTarget({ kind: 'agent', id: f.agent }); }
       else if (e.fit) this.fit();
     };
+    if (e.report) { this.toast(`◎ ${e.reason}`); return; }   // the director only reports while you are busy
     setTimeout(go, 120);   // let the layout ops of the same command land first
-    if (e.by && e.by !== 'user' && (f || e.fit)) this.toast(`${e.by.startsWith('agent:') ? this.name(e.by.slice(6)) : e.by} changed the view`);
+    const who = e.by === 'director' ? 'Director' : e.by?.startsWith('agent:') ? this.name(e.by.slice(6)) : e.by;
+    if (e.by && e.by !== 'user' && (f || e.fit || e.reason)) this.toast(`◎ ${who}${e.reason ? ': ' + e.reason : ' changed the view'}`);
   }
 
   addChunk(id, e) {
@@ -374,6 +381,7 @@ class StudioView {
     }
     this.renderLinks();
     this.render();
+    this.renderDirector?.();
     if (missing) this.refreshState();
     if (full) this.$('.st-brand .root').textContent = d.root || this.$('.st-brand .root').textContent;
     this.renderFilter();
@@ -642,6 +650,7 @@ class StudioView {
       case 'b': return this.toggleTray();
       case 'l': return this.arrangeMenu(this.$('[data-h="arrange"]'));
       case 'p': return this.togglePlay();
+      case 'd': return this.directorMenu(this.$('[data-h="director"]'));
       case '0': return this.fit();
     }
     if (printable && /\S/.test(k)) { e.preventDefault(); this.openInput(null, k); }
@@ -912,6 +921,25 @@ class StudioView {
     this.r.append(m);
     m.focus();
     setTimeout(() => addEventListener('pointerdown', function off(ev) { if (!m.contains(ev.target)) { m.remove(); removeEventListener('pointerdown', off, true); } }, true));
+  }
+
+  // ================================================================ director
+  renderDirector() {
+    const b = this.$('[data-h="director"]');
+    if (!b || !this.doc) return;
+    const m = this.doc.config?.director || 'off';
+    b.textContent = { off: '◎ Director off', auto: '◎ Director: rules', agent: '◎ Director: agent' }[m];
+    b.classList.toggle('on', m !== 'off');
+  }
+  directorMenu(anchor) {
+    const set = async (mode, preset) => {
+      try { const r = await this.ctx.post('/api/studio/director', { doc: this.docId, mode, preset, by: 'user' }); this.toast(mode === 'off' ? 'The screen is yours' : mode === 'auto' ? 'Director: built-in rules run the screen' : 'Director agent runs the screen'); if (r.box && mode === 'agent') setTimeout(() => this.zoomTo('agent', r.box), 300); } catch (e) { this.toast(e.message, true); }
+    };
+    this.popList(anchor, [
+      { label: 'Off — the screen is yours', run: () => set('off') },
+      { label: 'Rules — permissions, red monitors, new boxes and servers come into view', run: () => set('auto') },
+      ...Object.keys(this.presets).map((k) => ({ label: `Agent — a director box (${this.presets[k].label || k}) decides`, run: () => set('agent', k) })),
+    ], 360);
   }
 
   // ================================================================ layouts
@@ -1385,6 +1413,7 @@ class StudioView {
       for (const p of this.doc.panels) L.push({ i: '¶', t: `Go to ${p.kind} “${p.title || p.kind}”`, run: () => this.zoomTo('panel', p.id) });
       for (const [k, label] of Object.entries(MODES)) L.push({ i: '▤', t: `Arrange: ${label}`, run: () => this.applyOps(arrange(this.doc, k, { focus: hov }), `arrange ${k}`) });
       for (const Lt of this.doc.layouts || []) L.push({ i: '↺', t: `Layout: ${Lt.name}`, run: () => this.applyOps(applyLayout(this.doc, Lt), `layout ${Lt.name}`) });
+      for (const [m, t] of [['off', 'Director off — the screen is yours'], ['auto', 'Director: built-in rules'], ['agent', 'Director: a director agent decides']]) L.push({ i: '◎', t, run: () => this.ctx.post('/api/studio/director', { doc: this.docId, mode: m, by: 'user' }).catch((e) => this.toast(e.message, true)) });
       L.push({ i: '◉', t: 'Next gate', x: 'G', run: () => this.nextGate() });
       L.push({ i: '▶', t: 'Replay all changes', x: 'P', run: () => this.togglePlay() });
       L.push({ i: '●', t: 'Back to live', run: () => this.scrub(null) });
@@ -1437,7 +1466,7 @@ class StudioView {
       ['drag a prompt', 'A prompt bubble onto another box: run it there'], ['drag a note', 'Onto a box: send it'], ['Y A N', 'Answer the permission of the box you point at'],
       ['⌥R ⌥F', 'Review · fork the box you point at'], ['⌥T ⌥M', 'Terminal · code map for it'], ['⌥S ⌥. ⌥Z', 'Start/stop · interrupt · zoom'],
       ['G', 'Next gate (who needs you)'], ['[ ]', 'Previous / next snapshot'], ['P', 'Replay every change'], ['Esc', 'Back to live · fit all'],
-      ['L', 'Arrange · saved layouts'], ['B', 'Show / hide the changes tray'], ['drag · wheel', 'Pan'], ['pinch · ⌘ wheel', 'Zoom'], ['⌘K', 'Spotlight: commands, previews, SQL'],
+      ['L', 'Arrange · saved layouts'], ['D', 'Director: off · rules · agent'], ['B', 'Show / hide the changes tray'], ['drag · wheel', 'Pan'], ['pinch · ⌘ wheel', 'Zoom'], ['⌘K', 'Spotlight: commands, previews, SQL'],
     ];
     o.innerHTML = `<div><h3>Studio keys</h3>${K.map(([k, t]) => `<p><kbd>${esc(k)}</kbd><span>${esc(t)}</span></p>`).join('')}</div>`;
     o.onclick = () => { o.remove(); this.r.focus({ preventScroll: true }); };

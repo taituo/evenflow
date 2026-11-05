@@ -9,7 +9,8 @@ const AGENT_KEYS = ['name', 'color', 'x', 'y', 'w', 'h', 'scope', 'preset', 'com
 const PANEL_KEYS = ['title', 'text', 'kind', 'x', 'y', 'w', 'h', 'color', 'source', 'pinned'];
 
 export const PANEL_KINDS = ['note', 'review', 'prompt', 'sql', 'snippet', 'terminal', 'preview', 'map'];
-export function create(title) { return { type, title: title || 'Studio', root: null, agents: [], panels: [], layouts: [] }; }
+export function create(title) { return { type, title: title || 'Studio', root: null, agents: [], panels: [], layouts: [], config: {} }; }
+const CONFIG = { director: ['off', 'auto', 'agent'] };
 
 function cleanAgent(a) {
   if (!a || typeof a.id !== 'string' || !/^[\w-]{1,40}$/.test(a.id)) throw new Error('agent needs an id ([A-Za-z0-9_-])');
@@ -93,6 +94,17 @@ export function apply(st, op) {
       if (i < 0) throw new Error(`no layout "${op.name}"`);
       const [old] = st.layouts.splice(i, 1);
       return done([{ op: 'saveLayout', ...old }], [{ k: 'layout', action: 'remove', name: old.name }]);
+    }
+    case 'setConfig': {
+      st.config ||= {};
+      const old = {};
+      for (const [k, v] of Object.entries(op.set || {})) {
+        if (!CONFIG[k]) throw new Error(`Unknown studio setting "${k}"`);
+        if (v != null && !CONFIG[k].includes(v)) throw new Error(`${k}: one of ${CONFIG[k].join(', ')}`);
+        old[k] = st.config[k] ?? null;
+        if (v == null) delete st.config[k]; else st.config[k] = v;
+      }
+      return done([{ op: 'setConfig', set: old }], [{ k: 'config', set: op.set }]);
     }
     case 'setRoot': {
       const old = st.root;

@@ -160,6 +160,16 @@ export function createServer(store) {
     'POST /api/studio/review': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.review(r.id, b)); },
     'POST /api/studio/spawn': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.spawn(r.id, b)); },
     'POST /api/studio/view': async (req, res) => send(res, 200, studio.view(await body(req))),
+    'POST /api/studio/activity': async (req, res) => { const b = await body(req); studio.director.activity(b.doc || studio.ensureDoc().id); send(res, 200, { ok: true }); },
+    'POST /api/studio/director': async (req, res) => {
+      // director: off | auto | agent (agent also starts a director box if there is none)
+      const b = await body(req);
+      const d = studio.studioDoc(b.doc || studio.ensureDoc().id);
+      store.batch({ doc: d.id, by: b.by || 'user', ops: [{ op: 'setConfig', set: { director: b.mode || 'auto' } }], label: 'director ' + b.mode });
+      let box = studio.director.directorBox(d.id);
+      if (b.mode === 'agent' && !box) box = await studio.createAgent({ doc: d.id, role: 'director', preset: b.preset, by: b.by || 'user' });
+      send(res, 200, { mode: b.mode, box: box?.id || null });
+    },
     'GET /api/studio/codemap': async (req, res, u) => { const q = u.searchParams; send(res, 200, await studio.codemap({ doc: q.get('doc'), agent: q.get('agent'), snap: q.get('snap'), paths: q.get('paths') })); },
     'POST /api/studio/term': async (req, res) => {
       const b = await body(req);

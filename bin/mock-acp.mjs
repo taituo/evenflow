@@ -13,12 +13,14 @@
 //   slow / hidas          take its time (to try cancel / steering)
 //   alternative / vaihtoehto   call the studio's MCP tool studio_fork: spin off a copy to try another approach
 //   reviewer / katselmoija      call studio_spawn: a reviewer sub-agent in the same folder
+//   serve / palvelin      start a little web app on a free port and say its URL (the director opens a preview)
 //
 // MOCK_DELAY=ms per streamed chunk (default 45; 0 in tests).
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn as spawnProc } from 'node:child_process';
+import http from 'node:http';
 
 const DELAY = +(process.env.MOCK_DELAY ?? 45);
 const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -176,6 +178,19 @@ async function turn(sessionId, s, raw) {
   const pace = async (ms) => sleep(slow ? Math.max(ms, 400) : ms);
   const done = () => (s.cancelled ? 'cancelled' : 'end_turn');
 
+  if (raw.startsWith('[Director digest]') || t.includes('[director digest]')) {
+    // a director: look at what needs the person most and put it on screen
+    const lines = raw.split('\n');
+    const pick = lines.find((l) => /asks permission|failed:/.test(l)) || lines.find((l) => /is red|started a server/.test(l)) || lines.find((l) => /new box/.test(l)) || lines.find((l) => /\(agent a/.test(l));
+    const id = /\(agent (a[0-9a-f]+)\)/.exec(pick || '')?.[1];
+    const url = /(http:\/\/localhost:\d+)/.exec(pick || '')?.[1];
+    if (!id) { await say(sessionId, s, 'Nothing worth moving the camera for.'); return done(); }
+    const reason = (pick || '').replace(/^- /, '').replace(/\s*\(agent a[0-9a-f]+\)/, '').slice(0, 120);
+    await toolCall(sessionId, s, 'studio_show', 'studio_show', url ? { open: { kind: 'preview', url, agent: id }, reason } : { focus: id, reason });
+    await say(sessionId, s, `Showing ${reason}.`);
+    return done();
+  }
+
   if (has(t, 'review', 'arvioi', 'katselmo')) {
     await think(sessionId, s, 'Reading the diff hunk by hunk.');
     const files = [...raw.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((x) => x[1]);
@@ -188,6 +203,22 @@ async function turn(sessionId, s, raw) {
     if (added.length > 200) notes.push(`- Large change (${added.length} added lines): consider splitting it.`);
     const body = `Review of ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? ': ' + files.join(', ') : ''}.\n\n${notes.length ? notes.join('\n') : '- Nothing blocking. The change is small and focused.'}\n\nVerdict: ${notes.some((n) => /credential|No test/.test(n)) ? 'request changes' : 'looks good to merge'}.`;
     await say(sessionId, s, body);
+    return done();
+  }
+
+  if (has(t, 'serve', 'palvelin', 'dev server')) {
+    const id = 'call_' + (++s.n);
+    record(sessionId, s, { sessionUpdate: 'tool_call', toolCallId: id, title: 'Run npm run dev', kind: 'execute', status: 'in_progress' });
+    const srv = http.createServer((req, res) => {
+      const files = fs.readdirSync(path.join(s.cwd, 'src')).filter((f) => f.endsWith('.js'));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><body style="margin:0;font:15px system-ui;background:linear-gradient(135deg,#eef2ff,#f0fdf4);min-height:100vh;display:grid;place-items:center"><main style="background:#fff;padding:28px 34px;border-radius:16px;box-shadow:0 12px 40px -12px #0003;min-width:300px"><h2 style="margin:0 0 4px">Demo app</h2><p style="margin:0 0 14px;color:#71717a">Served live from the agent's worktree</p><ul style="margin:0;padding-left:18px">${files.map((f) => `<li><code>${f}</code></li>`).join('')}</ul></main></body>`);
+    });
+    await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+    s.servers = [...(s.servers || []), srv];
+    const url = `http://localhost:${srv.address().port}`;
+    record(sessionId, s, { sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: `  VITE ready\n  ➜  Local:   ${url}/` } }] });
+    await say(sessionId, s, `The dev server is running at ${url} — have a look.`);
     return done();
   }
 

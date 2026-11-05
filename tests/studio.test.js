@@ -370,3 +370,44 @@ test('remote mode: with SPREAD_TOKEN every request needs the token (query once â
     assert.equal((await fetch(`${base}/studio`, { headers: { cookie: 'spread_token=wrong' } })).status, 401);
   } finally { delete process.env.SPREAD_TOKEN; }
 });
+
+test('the director runs the screen: rules move the camera with a reason, report while you work, or a director agent decides', async () => {
+  const views = [];
+  const off = store.subscribe((e) => { if (e.type === 'studio' && e.kind === 'view' && e.by && e.by !== 'user') views.push(e); });
+  try {
+    await post('/api/studio/director', { mode: 'auto' });
+    assert.equal((await getJ('/api/doc?id=studio')).doc.config.director, 'auto');
+    const r = await post('/api/studio/agents', { preset: 'mock', name: 'Dir1', prompt: 'implement a widget', x: 9000, y: 0 });
+    const v = await until(() => views.find((e) => e.focus?.agent === r.id && /asks/.test(e.reason || '')) || views.find((e) => e.focus?.agent === r.id), 8000, 'director focus');
+    assert.ok(v.reason, 'every move says why');
+    // while the person is using the studio, it only reports
+    await post('/api/studio/activity', { doc: 'studio' });
+    views.length = 0;
+    await post('/api/studio/prompt', { agent: r.id, text: 'break it' });
+    const g = await until(() => gates(r.id, 'permission').then((x) => x[0]), 8000, 'permission');
+    await post('/api/studio/gate', { gate: g.id, option: 'allow' });
+    await until(() => views.find((e) => /syntax is red/.test(e.reason || '')), 8000, 'syntax report');
+    assert.ok(views.filter((e) => /syntax is red/.test(e.reason || '')).every((e) => e.report), 'reported, not moved');
+    // an agent starts a dev server: the director opens it as a preview next to that box
+    const before = (await getJ('/api/doc?id=studio')).doc.panels.length;
+    await post('/api/studio/prompt', { agent: r.id, text: 'start the dev server' });
+    const pv = await until(async () => (await getJ('/api/doc?id=studio')).doc.panels.slice(before).find((p) => p.kind === 'preview' && p.source.agent === r.id), 8000, 'preview opened by the director');
+    assert.match(pv.source.url, /^http:\/\/localhost:\d+/);
+    const page = await fetch(`${base}/preview/${new URL(pv.source.url).port}/`).then((x) => x.text());
+    assert.match(page, /Demo app/);
+    // a director agent: gets a digest, answers with studio_show
+    const d = await post('/api/studio/director', { mode: 'agent', preset: 'mock' });
+    assert.ok(d.box);
+    const doc = (await getJ('/api/doc?id=studio')).doc;
+    assert.equal(doc.agents.find((a) => a.id === d.box).role, 'director');
+    views.length = 0;
+    store.studio.director.st('studio').active = 0;
+    await post('/api/studio/prompt', { agent: r.id, text: 'secret' });
+    const byAgent = await until(() => views.find((e) => e.by === `agent:${d.box}`), 25000, 'the director agent moved the view');
+    assert.ok(byAgent.reason);
+    assert.match(await getT(`/api/studio/events?agent=${d.box}&format=text`), /\[Director digest\]/);
+  } finally {
+    off();
+    await post('/api/studio/director', { mode: 'off' });
+  }
+});
