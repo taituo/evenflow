@@ -544,7 +544,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const store = new Store(DATA).init();
   const srv = createServer(store);
   srv.listen(PORT, HOST, () => {
-    console.log(`Spread  http://${HOST}:${PORT}   studio http://${HOST}:${PORT}/studio   data: ${DATA}`);
+    console.log(`Evenflow  http://${HOST}:${PORT}/studio   (sheets: http://${HOST}:${PORT}/)   data: ${DATA}`);
     if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !tokenNow()) console.warn('WARNING: no auth. Set SPREAD_TOKEN before exposing this beyond localhost.');
   });
   const bye = () => { store.studio?.close(); store.flush(); process.exit(0); };

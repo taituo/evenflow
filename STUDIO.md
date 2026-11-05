@@ -1,4 +1,4 @@
-# Studio
+# Evenflow studio — the manual
 
 **Coding agents on an infinite canvas.** Every box is an [ACP](https://agentclientprotocol.com) session — Kiro CLI, a Claude Code or Gemini ACP adapter, or any other ACP agent — working in its own git worktree (or a sparse slice of a monorepo). Everything it does is recorded as SQL, every file change is snapshotted, deterministic monitors check each snapshot, and the places where it needs you show up as gates. You steer by pointing and typing (or talking); the agents can steer the screen too. Next to them: real terminals, live previews of the app they are building, code maps, notes and snippets.
 

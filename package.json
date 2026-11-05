@@ -1,11 +1,12 @@
 {
-  "name": "spread",
-  "version": "0.13.0",
-  "description": "Spread — a spreadsheet you share with your AI agent, and a live dashboard that builds itself from it. Zero dependencies.",
+  "name": "evenflow",
+  "version": "0.1.0",
+  "description": "Evenflow — coding agents (ACP) on an infinite canvas: worktrees, snapshots, deterministic monitors, gates, replay, terminals, previews and a director. Zero dependencies.",
   "type": "module",
   "bin": { "cm": "bin/cm.mjs" },
   "scripts": {
     "start": "node server.js",
+    "studio": "node server.js",
     "test": "node --test tests/*.test.js",
     "e2e": "node tests/e2e/run.cjs",
     "e2e:studio": "node tests/e2e/studio.cjs"
