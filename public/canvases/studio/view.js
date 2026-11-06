@@ -713,6 +713,8 @@ class StudioView {
     n.querySelector('.chip').ondblclick = () => this.zoomTo('agent', a.id);
     n.querySelector('.st-ah').ondblclick = (e) => { if (!e.target.closest('button')) this.zoomTo('agent', a.id); };
     n.querySelector('.st-log').onclick = (e) => {
+      const rw = e.target.closest('.rw');
+      if (rw) return this.rewindMenu(a.id, +rw.dataset.turn, rw);
       const t = e.target.closest('.ev.tool');
       if (t) return this.openTool(a.id, +t.dataset.seq);
       const b = e.target.closest('[data-gate]');
@@ -799,7 +801,13 @@ class StudioView {
     r.nodes = new Map();
     log.innerHTML = '';
     const evs = this.T == null ? r.events : r.events.filter((e) => (e.ts || 0) <= this.T);
-    for (const ev of evs.slice(-400)) log.append(this.eventNode(id, ev));
+    // turns a conversation rewind took back stay visible, greyed: [cut, rewind event)
+    const gone = evs.filter((e) => e.kind === 'rewind' && e.json?.mode !== 'files' && e.json?.cut != null).map((e) => [e.json.cut, e.seq]);
+    for (const ev of evs.slice(-400)) {
+      const node = this.eventNode(id, ev);
+      if (ev.seq != null && gone.some(([a, b]) => ev.seq >= a && ev.seq < b)) node.classList.add('rewound');
+      log.append(node);
+    }
     if (!r.events.length) log.innerHTML = `<div class="ev system" style="color:var(--dim)">${esc(this.agentDef(id)?.cwd || '')}<br>Point here and type to give ${esc(this.name(id))} a task.</div>`;
     log.scrollTop = log.scrollHeight;
   }
@@ -807,8 +815,8 @@ class StudioView {
     let node;
     switch (ev.kind) {
       case 'user': {
-        node = el('div', 'ev user', `<div draggable="true" title="Drag onto another box to send it there, or onto the canvas">${esc(ev.text)}<small>${esc(ev.json?.by && ev.json.by !== 'user' ? ev.json.by + ' · ' : '')}${hhmm(ev.ts)}</small></div>`);
-        node.firstChild.dataset.text = ev.text;
+        node = el('div', 'ev user', `${ev.turn ? `<button class="rw" data-turn="${ev.turn}" title="Rewind to before this message — the conversation, the files, or both">⟲</button>` : ''}<div draggable="true" title="Drag onto another box to send it there, or onto the canvas">${esc(ev.text)}<small>${esc(ev.json?.by && ev.json.by !== 'user' ? ev.json.by + ' · ' : '')}${hhmm(ev.ts)}</small></div>`);
+        node.lastChild.dataset.text = ev.text;
         break;
       }
       case 'agent': node = el('div', 'ev agent', md(ev.text)); break;
@@ -828,6 +836,7 @@ class StudioView {
         break;
       }
       case 'turn': node = el('div', 'ev turn', `turn ${ev.turn || ''} · ${esc(ev.status || '')}`); break;
+      case 'rewind': node = el('div', `ev rewind ${esc(ev.json?.mode || '')}`, `<span>⟲ ${esc(ev.text)}</span>`); break;
       case 'error': node = el('div', 'ev error', esc(ev.text)); break;
       default: node = el('div', 'ev system', esc(ev.text || ev.kind));
     }
@@ -854,6 +863,7 @@ class StudioView {
     }
     r.events.push(ev);
     if (ev.seq != null) r.bySeq.set(ev.seq, ev);
+    if (ev.kind === 'rewind') return this.renderLog(id);
     this.logAppend(id, this.eventNode(id, ev));
     if (ev.kind === 'permission') this.renderGates();
   }
@@ -1073,6 +1083,29 @@ class StudioView {
   }
   async spawn(id, mode, role, promptText) {
     try { const r = await this.ctx.post('/api/studio/spawn', { agent: id, mode, role, prompt: promptText, by: 'user' }); this.toast(`${r.name} ${mode === 'same' ? 'works in the same folder' : 'has its own worktree'}`); } catch (e) { this.toast(e.message, true); }
+  }
+  /** ⟲ on a prompt: take the conversation, the files, or both back to just before it. */
+  rewindMenu(id, turn, anchor) {
+    const ev = this.rtOf(id).events.find((e) => e.kind === 'user' && e.turn === turn);
+    const go = (mode) => this.rewindTurn(id, turn, mode, ev?.text);
+    this.popList(anchor, [
+      { label: 'Rewind the conversation — keep the files', run: () => go('conversation') },
+      { label: 'Rewind the conversation and the files', run: () => go('both') },
+      { label: 'Rewind the files only', run: () => go('files') },
+      '-',
+      { label: 'Fork a new box from here instead', run: async () => { try { const t = (await this.ctx.get(`/api/studio/turns?agent=${id}`)).find((x) => x.turn === turn); if (t?.snap != null) this.fork(id, t.snap); } catch (e) { this.toast(e.message, true); } } },
+    ], 330);
+  }
+  async rewindTurn(id, turn, mode, text) {
+    try {
+      await this.ctx.post('/api/studio/rewind', { agent: id, turn, mode });
+      this.toast({ conversation: `${this.name(id)}: conversation back to before turn ${turn} · files kept — it will be told to check`, both: `${this.name(id)}: conversation and files back to before turn ${turn}`, files: `${this.name(id)}: files back to before turn ${turn}` }[mode]);
+      this.scrub(null);
+      if (mode !== 'files' && text) {   // the rewound prompt comes back for editing, like taking a message back
+        if (this.mode === 'focus' && this.focus.fa === id) { this.focus.ta.value = text; this.focus.grow(); this.focus.ta.focus(); }
+        else this.openInput({ kind: 'agent', id }, text);
+      }
+    } catch (e) { this.toast(e.message, true); }
   }
   async rewind(id, n) {
     try { await this.ctx.post('/api/studio/rewind', { agent: id, snap: n }); this.toast(`${this.name(id)} rewound to #${n}`); this.scrub(null); } catch (e) { this.toast(e.message, true); }

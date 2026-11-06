@@ -68,7 +68,13 @@ async function handle(m) {
     // context the client prepends (fork history, studio notes) is not the request itself
     const end = text.lastIndexOf('[End of the earlier conversation');
     if (end >= 0) text = text.slice(text.indexOf(']', end) + 1);
-    text = text.split('\n').filter((l) => !/^\[Studio:/.test(l)).join('\n').trim();
+    const rewound = /^\[Rewound:/m.test(text);
+    text = text.split('\n').filter((l) => !/^\[(Studio|Rewound):/.test(l)).join('\n').trim();
+    if (rewound && /files were kept/.test(p.prompt.map((b) => b.text || '').join(''))) {
+      // what a real agent should do after a conversation-only rewind: look before acting
+      await think(p.sessionId, s, 'The conversation was rewound but the files were kept. Check what is there now.');
+      await say(p.sessionId, s, 'The project moved on since that point, so I checked the current state first. ');
+    }
     const stop = await turn(p.sessionId, s, text);
     return send({ id: m.id, result: { stopReason: stop } });
   }

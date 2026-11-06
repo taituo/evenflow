@@ -155,7 +155,12 @@ export function createServer(store) {
     },
     'POST /api/studio/cancel': async (req, res, u) => { const r = agentOf(u, await body(req)); r.cancel(); send(res, 200, { ok: true }); },
     'POST /api/studio/gate': async (req, res) => { const b = await body(req); send(res, 200, b.dismiss ? studio.dismiss(b.gate) : studio.answer(b.gate, b.option)); },
-    'POST /api/studio/rewind': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await r.rewind(+String(b.snap).replace(/^#/, ''))); },
+    'POST /api/studio/rewind': async (req, res, u) => {
+      const b = await body(req); const r = agentOf(u, b);
+      if (b.turn != null) return send(res, 200, await r.rewindTurn(+b.turn, b.mode || 'conversation'));
+      send(res, 200, await r.rewind(+String(b.snap).replace(/^#/, '')));
+    },
+    'GET /api/studio/turns': (req, res, u) => { const r = agentOf(u, {}); send(res, 200, studio.db.turns(r.id)); },
     'POST /api/studio/fork': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.fork(r.id, { ...b, snap: b.snap == null ? null : +String(b.snap).replace(/^#/, '') })); },
     'POST /api/studio/review': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.review(r.id, b)); },
     'POST /api/studio/spawn': async (req, res, u) => { const b = await body(req); const r = agentOf(u, b); send(res, 200, await studio.spawn(r.id, b)); },

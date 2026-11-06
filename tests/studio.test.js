@@ -200,6 +200,43 @@ test('rewind puts the directory back, is itself a snapshot, and tells the agent 
   assert.ok(!(await gates(A, 'monitor')).some((g) => g.json.monitor === 'secrets'), 'the gate closed with the cause');
 });
 
+test('every turn is tracked in the worktree; rewind a turn: the conversation only (files kept, the agent told to check), both, or the files', async () => {
+  const b = await post('/api/studio/agents', { preset: 'mock', name: 'Turns', by: 'user' });
+  const B = b.id, f = (x) => fs.existsSync(path.join(b.cwd, x));
+  for (const text of ['break it', 'loop', 'secret']) { await post('/api/studio/prompt', { agent: B, text, by: 'user' }); await idle(B); }
+  const turns = await getJ(`/api/studio/turns?agent=${B}`);
+  assert.deepEqual(turns.map((t) => [t.turn, t.text]), [[1, 'break it'], [2, 'loop'], [3, 'secret']]);
+  assert.ok(turns.every((t) => t.snap != null && t.seq != null), 'each turn has its prompt event and the snapshot just before it');
+  const session0 = (await agent(B)).sessionId;
+
+  // 1) the conversation goes back to before turn 2; the files stay as they are
+  await assert.rejects(post('/api/studio/rewind', { agent: B, turn: 9 }), /404/);
+  const r1 = await post('/api/studio/rewind', { agent: B, turn: 2, mode: 'conversation' });
+  assert.equal(r1.kept, true);
+  assert.ok(f('src/retry.js') && f('src/config.js'), 'files kept');
+  assert.notEqual((await agent(B)).sessionId, session0, 'a fresh ACP session that has seen only turn 1');
+  let ev = await getJ(`/api/studio/events?agent=${B}`);
+  const rw = ev.find((e) => e.kind === 'rewind');
+  assert.equal(rw.json.cut, ev.find((e) => e.kind === 'user' && e.turn === 2).seq);
+  assert.match(rw.json.note, /^\[Rewound: .*files were kept — the project has moved on/);
+  await post('/api/studio/prompt', { agent: B, text: 'loop', by: 'user' });
+  await idle(B);
+  ev = await getJ(`/api/studio/events?agent=${B}`);
+  const reply = ev.filter((e) => e.kind === 'agent' && e.turn === 4)[0];
+  assert.match(reply.text, /^The project moved on since that point, so I checked the current state first/, 'the next prompt carried the rewind prefix');
+
+  // 2) conversation and files back to before turn 2: only turn 1's file is there
+  await post('/api/studio/rewind', { agent: B, turn: 2, mode: 'both' });
+  assert.ok(f('src/broken.js') && !f('src/retry.js') && !f('src/config.js'));
+  assert.match((await agent(B)).snapshots.at(-1).reason, /rewind to before turn 2/);
+
+  // 3) the files only, back to before turn 4 (retry.js and config.js were there then); the conversation carries on
+  const s4 = (await agent(B)).sessionId;
+  await post('/api/studio/rewind', { agent: B, turn: 4, mode: 'files' });
+  assert.ok(f('src/retry.js') && f('src/config.js'));
+  assert.equal((await agent(B)).sessionId, s4);
+});
+
 test('review: a panel on the canvas, written by a read-only reviewer session', async () => {
   await post('/api/studio/prompt', { agent: A, text: 'secret', by: 'user' });
   await idle(A);

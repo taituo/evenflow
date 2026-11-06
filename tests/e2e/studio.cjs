@@ -201,6 +201,19 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
       await page.locator('.fx-composer textarea').fill('');
     });
 
+    await step('⟲ on a prompt rewinds the conversation, keeps the files; the prompt comes back to the composer', async () => {
+      await until(async () => /idle/.test(await page.locator('.fx-composer .stat').textContent()), 8000, 'idle');
+      const bubble = page.locator('.fx-session .ev.user').last();
+      await bubble.hover();
+      await bubble.locator('.rw').click();
+      await page.locator('.st-pick button', { hasText: 'keep the files' }).click();
+      await page.waitForSelector('.fx-session .ev.rewind');
+      assert.ok(await page.locator('.fx-session .ev.rewound').count() >= 2, 'the rewound turn stays, greyed');
+      assert.equal(await page.locator('.fx-composer textarea').inputValue(), 'implement a parser module');
+      await page.screenshot({ path: path.join(SHOTS, '5b-rewind.png') });
+      await page.locator('.fx-composer textarea').fill('');
+    });
+
     await step('a terminal tab floats over the screen with ⧉ and stays there on the canvas', async () => {
       await page.locator('.fx-ag', { hasText: 'Auth' }).first().click();
       await page.locator('.fx-tabs .tab', { hasText: 'Terminal' }).first().click();
