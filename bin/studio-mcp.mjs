@@ -40,8 +40,13 @@ const TOOLS = [
   },
   {
     name: 'studio_show',
-    description: 'Control what the studio screens show. focus: an agent id, a panel id or "self". open: a panel — {kind:"preview", url} for a running web UI (e.g. http://localhost:5173), {kind:"terminal", cmd?} in your folder, {kind:"map", paths?} for a code map, {kind:"note", title, text}. arrange: "grid" | "row" | "tree" | "focus". scrub: a snapshot number of yours, or "live". fit: true. theme: "light" | "dark". tray: true/false.',
-    inputSchema: { type: 'object', properties: { ...agentProp, focus: { type: 'string' }, open: { type: 'object' }, arrange: { type: 'string' }, scrub: {}, fit: { type: 'boolean' }, theme: { type: 'string' }, tray: { type: 'boolean' }, reason: { type: 'string', description: 'One short sentence shown on screen: why this view' } } },
+    description: 'Control what the studio screens show and where things are. mode: "canvas" | "focus" (classic coding UI around the focused agent). focus: an agent id, a panel id or "self". float: pin a panel to the screen. move: [{id,x,y,w,h}] rearranges boxes and panels by hand. tab: the right-hand tab in focus mode. open: a panel — {kind:"preview", url} for a running web UI (e.g. http://localhost:5173), {kind:"terminal", cmd?} in your folder, {kind:"map", paths?} for a code map, {kind:"note", title, text}. arrange: "grid" | "row" | "tree" | "focus". scrub: a snapshot number of yours, or "live". fit: true. theme: "light" | "dark". tray: true/false.',
+    inputSchema: { type: 'object', properties: { ...agentProp, focus: { type: 'string' }, open: { type: 'object' }, arrange: { type: 'string' }, scrub: {}, fit: { type: 'boolean' }, theme: { type: 'string' }, tray: { type: 'boolean' },
+      mode: { type: 'string', enum: ['canvas', 'focus'], description: 'canvas: every box on the infinite canvas · focus: a classic coding UI around one agent (list, session + composer, changes / terminal / preview tabs)' },
+      tab: { type: 'string', description: 'focus mode: the right-hand tab — "changes" or a panel id' },
+      float: { type: 'object', description: 'Pin a panel to the screen (stays in both modes): {panel, x, y, w, h} as fractions 0..1 of the screen, or {panel, off: true}' },
+      move: { type: 'array', items: { type: 'object' }, description: 'Move / resize boxes and panels on the canvas: [{id, x, y, w, h}] in canvas pixels' },
+      reason: { type: 'string', description: 'One short sentence shown on screen: why this view' } } },
     run: async (a) => {
       const self = a.agent || SELF;
       const b = { by: self ? `agent:${self}` : 'agent' };
@@ -53,6 +58,7 @@ const TOOLS = [
       if (a.theme) b.theme = a.theme;
       if (a.tray != null) b.tray = a.tray;
       if (a.reason) b.reason = a.reason;
+      for (const k of ['mode', 'tab', 'float', 'move']) if (a[k] != null) b[k] = a[k];
       const r = await api('POST', '/api/studio/view', b);
       return r.panel ? `Opened panel ${r.panel}.` : 'Done.';
     },

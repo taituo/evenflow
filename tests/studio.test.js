@@ -302,6 +302,44 @@ test('view commands are headless: open panels, arrange in the doc, and a code ma
   assert.ok(sliced.files.length && sliced.files.every((f) => f.path.startsWith('test/')));
 });
 
+test('focus mode and floating panels are driven by the same view command: mode, tab, float, move', async () => {
+  // a floating panel is pinned to the screen as fractions, clamped into it; it survives undo like any other field
+  const d = studioType.create('F');
+  studioType.apply(d, { op: 'addPanel', panel: { id: 'p1', float: { x: 0.9, y: -1, w: 0.5, h: 2 } } });
+  assert.deepEqual(d.panels[0].float, { x: 0.5, y: 0, w: 0.5, h: 1 });
+  const { inverse } = studioType.apply(d, { op: 'updatePanel', id: 'p1', set: { float: null } });
+  assert.equal(d.panels[0].float, null);
+  for (const op of inverse) studioType.apply(d, op);
+  assert.equal(d.panels[0].float.w, 0.5);
+  assert.equal(studioType.cleanFloat('nope'), null);
+
+  const seen = [];
+  const off = store.subscribe((e) => { if (e.type === 'studio' && e.kind === 'view') seen.push(e); });
+  const term = await post('/api/studio/view', { open: { kind: 'note', agent: A, text: 'pin me' } });
+  const r = await post('/api/studio/view', { by: 'director', reason: 'watch Auth', mode: 'focus', tab: 'changes', focus: { agent: A }, float: { panel: term.panel, x: 0.6, y: 0.1 }, move: [{ id: A, x: 40, y: 50, w: 700 }] });
+  off();
+  assert.equal(r.moved, 2);
+  const doc = (await getJ('/api/doc?id=studio')).doc;
+  const a = doc.agents.find((x) => x.id === A), p = doc.panels.find((x) => x.id === term.panel);
+  assert.deepEqual([a.x, a.y, a.w], [40, 50, 700]);
+  assert.deepEqual(p.float, { x: 0.6, y: 0.1, w: 0.34, h: 0.42 });
+  const e = seen.at(-1);
+  assert.equal(e.mode, 'focus'); assert.equal(e.tab, 'changes'); assert.equal(e.reason, 'watch Auth');
+  await post('/api/studio/view', { float: { panel: term.panel, off: true } });
+  assert.equal((await getJ('/api/doc?id=studio')).doc.panels.find((x) => x.id === term.panel).float, null);
+  await assert.rejects(post('/api/studio/view', { move: [{ id: 'nothing-here', x: 1 }] }), /404/);
+  // and the agents' own tool can do all of it
+  const tools = await new Promise((ok) => {
+    const pr = spawn(process.execPath, ['bin/studio-mcp.mjs'], { env: { ...process.env, STUDIO_URL: base, STUDIO_AGENT: A }, stdio: ['pipe', 'pipe', 'inherit'] });
+    let out = '';
+    pr.stdout.on('data', (x) => { out += x; const l = out.split('\n').find((y) => y.includes('"id":2')); if (l) { pr.stdin.end(); ok(JSON.parse(l).result.tools); } });
+    pr.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
+    pr.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
+  });
+  const show = tools.find((t) => t.name === 'studio_show');
+  for (const k of ['mode', 'tab', 'float', 'move']) assert.ok(show.inputSchema.properties[k], `studio_show has ${k}`);
+});
+
 test('a real terminal in a box\'s worktree (PTY), with scrollback for late viewers', async () => {
   const r = await post('/api/studio/view', { open: { kind: 'terminal', agent: A } });
   const id = `studio:${r.panel}`;

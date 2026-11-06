@@ -18,6 +18,7 @@ export class Saver {
   arm() { clearTimeout(this.t); if (this.secs > 0 && !this.on) this.t = setTimeout(() => this.sleep(), this.secs * 1000); }
   items() {
     const v = this.v;
+    if (v.mode === 'focus') return [...v.r.querySelectorAll('.st-subs, .fx-pane, .fx-main, .st-float > .st-panel, .fx-side')];
     const cx = v.cam.x + v.box().width / 2 / v.cam.z, cy = v.cam.y + v.box().height / 2 / v.cam.z;
     const els = [...v.agentEls.entries()].map(([id, el]) => ({ el, a: v.agentDef(id) })).concat([...v.panelEls.entries()].map(([id, el]) => ({ el, a: v.doc.panels.find((p) => p.id === id) })))
       .filter((x) => x.a).sort((p, q) => Math.hypot(q.a.x + q.a.w / 2 - cx, q.a.y + q.a.h / 2 - cy) - Math.hypot(p.a.x + p.a.w / 2 - cx, p.a.y + p.a.h / 2 - cy)).map((x) => x.el);

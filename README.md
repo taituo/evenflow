@@ -15,6 +15,7 @@ Node 22.13+, git and python3 (for terminals). Zero npm dependencies. The first b
 ## What it does
 
 - **A box is an agent.** `Shift`+drag on the canvas, pick an agent: it starts in a new worktree on its own branch — or a **sparse checkout** of only the paths you name in a monorepo. Point at a box and start typing to talk to it.
+- **Or a classic coding UI.** `⌘\` switches to **focus mode**: agents on the left, one session and a composer in the middle, its changes, terminals and previews as tabs on the right — the same boxes and panels, moved into place. Any panel can **float** over the screen in either mode. The director switches modes, floats and moves things too.
 - **Semantic zoom.** Far away a box is a tile (name, status, red lights, its last sentence); close up it is the whole session — plan, transcript, tool calls, permissions, files, monitors, snapshots.
 - **Snapshots, replay, rewind, fork.** Every tool call is snapshotted into a private shadow git (your repo's git is never touched). The diff tray shows every change of every agent on one timeline: scrub it, **replay** it, **rewind** a box to any moment, or **fork** a new box from it.
 - **Deterministic monitors** on every snapshot, no model involved: syntax, churn (the agent is looping), size, tests, secrets, dependencies, scope, plus your own commands (`.studio/monitors.json`).
@@ -28,6 +29,8 @@ Node 22.13+, git and python3 (for terminals). Zero npm dependencies. The first b
 - **Voice-ready.** `POST /api/studio/say` goes to whatever you point at; finished sentences stream out on `/api/events` for text-to-speech.
 
 The full manual — keys, agents and presets, the agents' tools, director, remote mode, monitors, the session SQL and the HTTP API — is **[STUDIO.md](STUDIO.md)**.
+
+![Focus mode](docs/studio-focus.jpg)
 
 ![Dark](docs/studio-dark.jpg)
 
@@ -45,6 +48,7 @@ lib/studio/
   preview.js      /preview/<port>/ reverse proxy, HTTP and WebSocket
 public/canvases/studio/
   view.js         the canvas: boxes, panels, gates, tray, timeline, spotlight, director controls
+  focus.js        focus mode (agents · session + composer · tabs) and floating panels
   panels.js       terminal, preview and code-map panels · term.js the terminal emulator
   layout.js       arrangements and saved layouts · saver.js idle mode
 bin/

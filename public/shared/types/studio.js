@@ -6,7 +6,14 @@ export const type = 'studio';
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const num = (v, d) => (Number.isFinite(+v) ? Math.round(+v) : d);
 const AGENT_KEYS = ['name', 'color', 'x', 'y', 'w', 'h', 'scope', 'preset', 'command', 'cwd', 'branch', 'worktree', 'forkOf', 'collapsed', 'sparse', 'why', 'role'];
-const PANEL_KEYS = ['title', 'text', 'kind', 'x', 'y', 'w', 'h', 'color', 'source', 'pinned'];
+const PANEL_KEYS = ['title', 'text', 'kind', 'x', 'y', 'w', 'h', 'color', 'source', 'pinned', 'float'];
+/** A panel pinned to the screen instead of the canvas: position and size as fractions of the screen (0..1). */
+export function cleanFloat(f) {
+  if (!f || typeof f !== 'object') return null;
+  const c = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.min(hi, Math.max(lo, Math.round(+v * 1000) / 1000)) : d);
+  const w = c(f.w, 0.08, 1, 0.34), h = c(f.h, 0.08, 1, 0.4);
+  return { x: c(f.x, 0, 1 - w, 0.62), y: c(f.y, 0, 1 - h, 0.08), w, h };
+}
 
 export const PANEL_KINDS = ['note', 'review', 'prompt', 'sql', 'snippet', 'terminal', 'preview', 'map'];
 export function create(title) { return { type, title: title || 'Studio', root: null, agents: [], panels: [], layouts: [], config: {} }; }
@@ -28,7 +35,7 @@ function cleanPanel(p) {
   return {
     id: p.id, title: String(p.title ?? '').slice(0, 120), text: String(p.text ?? '').slice(0, 200000), kind: PANEL_KINDS.includes(p.kind) ? p.kind : 'note',
     x: num(p.x, 0), y: num(p.y, 0), w: Math.max(140, num(p.w, 320)), h: Math.max(80, num(p.h, 200)),
-    color: /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : null, source: p.source || null, pinned: p.pinned || null,
+    color: /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : null, source: p.source || null, pinned: p.pinned || null, float: cleanFloat(p.float),
   };
 }
 

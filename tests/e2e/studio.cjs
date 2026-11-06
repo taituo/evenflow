@@ -132,7 +132,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     });
 
     await step('arrange (L → Grid) moves every box without overlaps; the theme switches', async () => {
-      await page.locator('[data-h="arrange"]').click();
+      await page.locator('.st-seg [data-h="arrange"]').click();
       await page.locator('.st-pick button', { hasText: 'Grid' }).click();
       await sleep(400);
       const boxes = await page.locator('.st-agent').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.x, r.y, r.width, r.height]));
@@ -140,9 +140,9 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
         const [x1, y1, w1, h1] = boxes[i], [x2, y2, w2, h2] = boxes[j];
         assert.ok(x1 + w1 <= x2 + 1 || x2 + w2 <= x1 + 1 || y1 + h1 <= y2 + 1 || y2 + h2 <= y1 + 1, 'no overlap');
       }
-      await page.locator('[data-h="theme"]').click();
+      await page.locator('.st-seg [data-h="theme"]').click();
       const t1 = await page.locator('.st').getAttribute('data-theme');
-      await page.locator('[data-h="theme"]').click();
+      await page.locator('.st-seg [data-h="theme"]').click();
       const t2 = await page.locator('.st').getAttribute('data-theme');
       assert.notEqual(t1, t2);
     });
@@ -168,6 +168,78 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
       await page.keyboard.press('Escape');
       await sleep(500);
       await page.screenshot({ path: path.join(SHOTS, '3-studio.png') });
+    });
+
+    await step('⌘\\ switches to focus mode: agents on the left, the session in the middle, tabs on the right', async () => {
+      await page.mouse.move(1280, 500);
+      await page.keyboard.press('Control+Backslash');
+      await page.waitForSelector('.st.focus');
+      assert.equal(await page.locator('.fx-ag').count(), 2);
+      assert.equal(await page.locator('.fx-session .st-agent.in-focus').count(), 1);
+      await page.locator('.fx-ag', { hasText: 'Auth' }).first().click();
+      await page.waitForSelector('.fx-session .st-agent .st-ah .nm:text-is("Auth")');
+      assert.ok(await page.locator('.fx-tabs .tab').count() >= 3, 'changes + the panels of Auth');
+      await page.waitForSelector('.fx-changes .dcard');
+      const agents = await page.locator('.fx-changes .dcard').evaluateAll((els) => [...new Set(els.map((e) => e.dataset.agent))]);
+      assert.equal(agents.length, 1, 'the changes tab shows the focused agent only');
+    });
+
+    await step('the composer talks to the focused agent; its permission is answered above the composer', async () => {
+      await page.locator('.fx-ag').nth(1).click();
+      const name = await page.locator('.fx-session .st-ah .nm').textContent();
+      await page.locator('.fx-composer textarea').click();
+      await page.keyboard.type('implement a parser module');
+      await page.keyboard.press('Enter');
+      await until(async () => (await page.locator('.fx-session .ev.user').count()) >= 1, 5000, 'prompt in the focused session');
+      await until(async () => page.locator('.fx-ask').isVisible(), 8000, 'permission above the composer');
+      assert.match(await page.locator('.fx-ask').textContent(), new RegExp(name));
+      await page.locator('.fx-ask .btn.ok').first().click();
+      await until(async () => !(await page.locator('.fx-ask').isVisible()), 5000, 'answered');
+      await page.locator('.st').focus();
+      await page.keyboard.type('x');
+      assert.equal(await page.locator('.fx-composer textarea').inputValue(), 'x', 'typing anywhere goes to the composer');
+      await page.locator('.fx-composer textarea').fill('');
+    });
+
+    await step('a terminal tab floats over the screen with ⧉ and stays there on the canvas', async () => {
+      await page.locator('.fx-ag', { hasText: 'Auth' }).first().click();
+      await page.locator('.fx-tabs .tab', { hasText: 'Terminal' }).first().click();
+      await page.waitForSelector('.st-panel.terminal.in-pane');
+      await until(async () => /studio-42/.test(await page.locator('.st-panel.terminal.in-pane .vt').textContent()), 4000, 'same terminal, same scrollback');
+      await page.locator('.fx-tabs .tab.on [data-t="float"]').click();
+      await page.waitForSelector('.st-float .st-panel.terminal.is-float');
+      await page.locator('.fx-tabs .tab', { hasText: 'Changes' }).click();
+      await sleep(400);
+      await page.screenshot({ path: path.join(SHOTS, '5-focus.png') });
+      await page.keyboard.press('Control+Backslash');
+      await page.waitForSelector('.st:not(.focus)');
+      assert.equal(await page.locator('.st-float .st-panel.terminal.is-float').count(), 1, 'still floating on the canvas');
+    });
+
+    await step('the director drives it: mode, float, move and tab through one view command', async () => {
+      const st = await api('/api/studio?format=json');
+      const { doc } = await api('/api/doc?id=' + encodeURIComponent(st.doc));
+      const auth = doc.agents.find((a) => a.name === 'Auth');
+      const term = doc.panels.find((p) => p.kind === 'terminal');
+      const r = await api('/api/studio/view', { by: 'director', reason: 'Auth is the one to watch', mode: 'focus', focus: { agent: auth.id }, tab: 'changes', float: { panel: term.id, x: 0.05, y: 0.55, w: 0.3, h: 0.35 }, move: [{ id: auth.id, x: -2000, y: -1200 }] });
+      assert.equal(r.moved, 2);
+      await page.waitForSelector('.st.focus');
+      await page.waitForSelector('.fx-session .st-ah .nm:text-is("Auth")');
+      await until(async () => { const b = await page.locator('.st-panel.terminal.is-float').boundingBox(); return b && Math.abs(b.x - 2560 * 0.05) < 4 && Math.abs(b.y - 1440 * 0.55) < 4; }, 4000, 'floated where the director put it');
+      await page.waitForSelector('.fx-tabs .tab.on[data-tab="changes"]');
+      await page.waitForSelector('.st-toast:text("Auth is the one to watch")');
+      await page.screenshot({ path: path.join(SHOTS, '6-focus-director.png') });
+      await api('/api/studio/view', { by: 'user', theme: 'dark' });
+      await sleep(2600);
+      await page.screenshot({ path: path.join(SHOTS, '7-focus-dark.png') });
+      await api('/api/studio/view', { by: 'user', theme: 'light' });
+      await sleep(600);
+      await page.screenshot({ path: path.join(SHOTS, '8-focus-light.png') });
+      await api('/api/studio/view', { by: 'director', mode: 'canvas', float: { panel: term.id, off: true } });
+      await page.waitForSelector('.st:not(.focus)');
+      await until(async () => (await page.locator('.st-float .st-panel').count()) === 0, 3000, 'unfloated');
+      const left = await page.locator(`.st-agent[data-id="${auth.id}"]`).evaluate((n) => n.style.left);
+      assert.equal(left, '-2000px', 'moved on the canvas');
     });
 
     const st = await api('/api/studio');

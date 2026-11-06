@@ -7,12 +7,14 @@
 //   right column                   → gates: where an agent needs you (permission, a red monitor, a finished turn)
 //   panels                         → notes, snippets, reviews, real terminals, live previews, code maps
 //   ⌘K                             → spotlight: every command by name
+//   ⌘\ (focus mode)                → a classic coding UI around one agent; panels can float over either mode
 //   idle                           → panels fade one by one; a shader stays, with the agents' voices over it
 //
 // Only the layout is a versioned doc (ctx.doc). Everything the agents do arrives as `studio` events.
 import { mountBody } from './panels.js';
 import { MODES, arrange, snapshotLayout, applyLayout } from './layout.js';
 import { Saver } from './saver.js';
+import { Focus } from './focus.js';
 
 const STYLE_ID = 'studio-css';
 const TEXT_KINDS = new Set(['note', 'review', 'prompt', 'sql', 'snippet']);
@@ -87,10 +89,12 @@ class StudioView {
     this.trayH = +(localStorage.getItem('studio.trayH') || 0) || 280;
     this.trayOff = localStorage.getItem('studio.trayOff') === '1';
     this.themePref = localStorage.getItem('studio.theme') || 'system';
+    this.mode = 'canvas';
     this.build();
     this.applyTheme();
     this.bind();
     this.syncLayout(true);
+    if (localStorage.getItem('studio.mode') === 'focus') this.setMode('focus');
     this.load();
     this.saver = new Saver(this);
     this.renderDirector();
@@ -108,9 +112,10 @@ class StudioView {
     r.innerHTML = `
       <div class="st-saver"></div>
       <div class="st-canvas"><div class="st-grid"></div><div class="st-world"><svg class="st-links"></svg></div></div>
+      <div class="st-float"></div>
       <div class="st-ticker"></div>
       <div class="st-hud"><div class="st-brand"><b>Studio</b><span class="root"></span></div>
-        <div class="st-seg"><span class="z"></span><button data-h="fit" title="Fit everything (Esc)">Fit</button><button data-h="arrange" title="Arrange boxes · saved layouts (L)">Arrange</button><button data-h="director" title="Director: who runs the screen — you, the built-in rules, or a director agent (D)"></button><button data-h="theme" title="Light / dark / system"></button><button data-h="spot" title="Spotlight">⌘K</button></div></div>
+        <div class="st-seg"><span class="z"></span><button data-h="fit" title="Fit everything (Esc)">Fit</button><button data-h="arrange" title="Arrange boxes · saved layouts (L)">Arrange</button><button data-h="mode" title="Focus mode: a classic coding view of one agent, panels as tabs (⌘\\)">◧ Focus</button><button data-h="director" title="Director: who runs the screen — you, the built-in rules, or a director agent (D)"></button><button data-h="theme" title="Light / dark / system"></button><button data-h="spot" title="Spotlight">⌘K</button></div></div>
       <div class="st-target" title="Typing and voice go here (point at a box to change)"><span>→</span><span class="chip">nothing yet</span></div>
       <div class="st-gates"></div>
       <div class="st-subs off"><div class="who"><i></i><span></span></div><div><span class="line"></span></div></div>
@@ -132,6 +137,8 @@ class StudioView {
     this.subs = this.$('.st-subs');
     this.tbody = this.$('.st-tbody');
     this.tl = this.$('.st-tl');
+    this.floatEl = this.$('.st-float');
+    this.focus = new Focus(this);
     this.applyTray();
     setTimeout(() => r.focus({ preventScroll: true }));
   }
@@ -140,11 +147,26 @@ class StudioView {
     const sys = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const t = this.themePref === 'system' ? sys : this.themePref;
     this.r.dataset.theme = t;
-    this.$('[data-h="theme"]').textContent = { system: '◐ Auto', light: '☀ Light', dark: '☾ Dark' }[this.themePref];
+    for (const b of this.r.querySelectorAll('[data-h="theme"]')) b.textContent = { system: '◐ Auto', light: '☀ Light', dark: '☾ Dark' }[this.themePref];
     if (this.root.id === 'studio') document.documentElement.style.background = getComputedStyle(this.r).getPropertyValue('--bg');
     if (this.saver?.on) this.saver.mount();
   }
   setTheme(t) { this.themePref = t; localStorage.setItem('studio.theme', t); this.applyTheme(); }
+  /** Canvas (every box on the infinite canvas) or focus (a classic coding UI around one agent). */
+  setMode(m) {
+    m = m === 'focus' ? 'focus' : 'canvas';
+    if (m === this.mode) return;
+    this.closeOverlays?.();
+    this.mode = m;
+    try { localStorage.setItem('studio.mode', m); } catch {}
+    this.r.classList.toggle('focus', m === 'focus');
+    if (m === 'focus') this.focus.enter(); else this.focus.leave();
+    this.syncLayout();
+    if (m === 'canvas') { this.render(); const id = this.focus.fa; if (id && this.agentDef(id)) setTimeout(() => this.zoomTo('agent', id), 30); }
+  }
+  hudAction(b) {
+    ({ fit: () => this.fit(), arrange: () => this.arrangeMenu(b), director: () => this.directorMenu(b), theme: () => this.setTheme({ system: 'light', light: 'dark', dark: 'system' }[this.themePref]), spot: () => this.spotlight(), mode: () => this.setMode(this.mode === 'focus' ? 'canvas' : 'focus') })[b.dataset.h]?.();
+  }
 
   bind() {
     const c = this.canvas;
@@ -153,7 +175,11 @@ class StudioView {
     this.on(window, 'pointermove', (e) => this.onMove(e));
     this.on(window, 'pointerup', (e) => this.onUp(e));
     this.on(this.r, 'keydown', (e) => this.onKey(e));
-    this.on(window, 'keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && this.r.isConnected) { e.preventDefault(); this.spotlight(); } });
+    this.on(window, 'keydown', (e) => {
+      if (!(e.metaKey || e.ctrlKey) || !this.r.isConnected) return;
+      if (e.key.toLowerCase() === 'k') { e.preventDefault(); this.spotlight(); }
+      else if (e.key === '\\' || e.code === 'Backslash') { e.preventDefault(); this.setMode(this.mode === 'focus' ? 'canvas' : 'focus'); }
+    });
     this.on(window, 'keyup', (e) => { if (e.code === 'Space') this.space = false; });
     this.on(window, 'resize', () => this.render());
     this.on(matchMedia('(prefers-color-scheme: dark)'), 'change', () => this.applyTheme());
@@ -187,11 +213,7 @@ class StudioView {
       this.snippet(text, w, prompt ? 'prompt' : null);
     });
     // HUD
-    this.$('.st-seg').onclick = (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      ({ fit: () => this.fit(), arrange: () => this.arrangeMenu(b), director: () => this.directorMenu(b), theme: () => this.setTheme({ system: 'light', light: 'dark', dark: 'system' }[this.themePref]), spot: () => this.spotlight() })[b.dataset.h]?.();
-    };
+    this.$('.st-seg').onclick = (e) => { const b = e.target.closest('button'); if (b) this.hudAction(b); };
     // tray
     this.$('.st-thead .lbl').onclick = () => this.toggleTray();
     this.$('.st-thead .golive').onclick = () => this.scrub(null);
@@ -315,6 +337,7 @@ class StudioView {
   }
   /** Display commands from agents and scripts (POST /api/studio/view). Layout changes already arrived as ops. */
   onView(e) {
+    if (e.mode && !e.report) this.setMode(e.mode);
     if (e.theme) this.setTheme(e.theme);
     if (e.tray != null && !!e.tray === this.trayOff) this.toggleTray();
     if (e.idle === true) this.saver.sleep(); else if (e.idle === false) this.saver.wake();
@@ -325,11 +348,12 @@ class StudioView {
       if (f?.panel) this.zoomTo('panel', f.panel);
       else if (f?.agent) { this.zoomTo('agent', f.agent); this.setTarget({ kind: 'agent', id: f.agent }); }
       else if (e.fit) this.fit();
+      if (e.tab && this.mode === 'focus') this.focus.setTab(e.tab);
     };
     if (e.report) { this.toast(`◎ ${e.reason}`); return; }   // the director only reports while you are busy
     setTimeout(go, 120);   // let the layout ops of the same command land first
     const who = e.by === 'director' ? 'Director' : e.by?.startsWith('agent:') ? this.name(e.by.slice(6)) : e.by;
-    if (e.by && e.by !== 'user' && (f || e.fit || e.reason)) this.toast(`◎ ${who}${e.reason ? ': ' + e.reason : ' changed the view'}`);
+    if (e.by && e.by !== 'user' && (f || e.fit || e.reason || e.mode)) this.toast(`◎ ${who}${e.reason ? ': ' + e.reason : ' changed the view'}`);
   }
 
   addChunk(id, e) {
@@ -379,6 +403,7 @@ class StudioView {
       if (ta && document.activeElement !== ta && !node.classList.contains('streaming') && ta.value !== p.text) ta.value = p.text;
       this.bodies.get(p.id)?.update?.(p);
     }
+    this.focus?.place();
     this.renderLinks();
     this.render();
     this.renderDirector?.();
@@ -417,12 +442,12 @@ class StudioView {
     for (const a of this.doc?.agents || []) {
       const n = this.agentEls.get(a.id);
       if (!n) continue;
-      const sw = a.w * z;
+      const sw = n.classList.contains('in-focus') ? 1e4 : a.w * z;
       const lod = sw < 280 ? 'chip' : sw < 430 ? 'card' : 'full';
       if (n.dataset.lod !== lod) { n.dataset.lod = lod; n.classList.remove('lod-chip', 'lod-card', 'lod-full'); n.classList.add('lod-' + lod); }
       n.classList.toggle('narrow', sw < 600);
     }
-    for (const p of this.doc?.panels || []) { const n = this.panelEls.get(p.id); if (n) n.classList.toggle('lod-chip', p.w * z < 200); }
+    for (const p of this.doc?.panels || []) { const n = this.panelEls.get(p.id); if (n) n.classList.toggle('lod-chip', !p.float && !n.classList.contains('in-pane') && p.w * z < 200); }
     clearTimeout(this.camTimer);
     this.camTimer = setTimeout(() => this.saveCam(), 400);
   }
@@ -454,14 +479,17 @@ class StudioView {
     this.fly = requestAnimationFrame(step);
   }
   fit(animate = true) {
-    const items = [...this.doc.agents, ...this.doc.panels];
+    if (this.mode === 'focus') return;
+    const items = [...this.doc.agents, ...this.doc.panels.filter((p) => !p.float)];
     if (!items.length) return this.flyTo({ x: 0, y: 0, w: 1200, h: 700 }, 40, animate);
     const x1 = Math.min(...items.map((i) => i.x)), y1 = Math.min(...items.map((i) => i.y));
     const x2 = Math.max(...items.map((i) => i.x + i.w)), y2 = Math.max(...items.map((i) => i.y + i.h));
     this.flyTo({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 }, 80, animate);
   }
   zoomTo(kind, id) {
+    if (this.mode === 'focus') return this.focus.reveal(kind, id);
     const it = kind === 'panel' ? this.doc.panels.find((p) => p.id === id) : this.agentDef(id);
+    if (it?.float) return this.focus.reveal('panel', id);
     if (it) this.flyTo(it, 40);
   }
 
@@ -478,7 +506,7 @@ class StudioView {
   }
   hit(sx, sy) {
     const w = this.toWorld(sx, sy);
-    for (const p of [...this.doc.panels].reverse()) if (w.x >= p.x && w.x <= p.x + p.w && w.y >= p.y && w.y <= p.y + p.h) return { kind: 'panel', id: p.id };
+    for (const p of [...this.doc.panels].reverse()) if (!p.float && w.x >= p.x && w.x <= p.x + p.w && w.y >= p.y && w.y <= p.y + p.h) return { kind: 'panel', id: p.id };
     for (const a of [...this.doc.agents].reverse()) if (w.x >= a.x && w.x <= a.x + a.w && w.y >= a.y && w.y <= a.y + a.h) return { kind: 'agent', id: a.id };
     return null;
   }
@@ -597,6 +625,7 @@ class StudioView {
   // ================================================================ keys
   onKey(e) {
     if (e.target.closest?.('textarea,input,.vt')) return;
+    if (this.mode === 'focus' && !e.metaKey && !e.ctrlKey && !e.altKey && this.focus.onKey(e)) return;
     if (e.code === 'Space' && !e.repeat) { this.space = true; e.preventDefault(); return; }
     const k = e.key, h = this.hover;
     const agent = h?.kind === 'agent' ? h.id : null;
@@ -714,6 +743,7 @@ class StudioView {
     const g = this.gates.filter((x) => x.agent === id && x.kind !== 'info');
     n.querySelector('.chip .g').textContent = g.length ? `${g.some((x) => x.blocking) ? '■' : '□'} ${g[0].kind === 'permission' ? 'asks: ' : ''}${g[0].title}` : '';
     n.querySelector('[data-a="run"]').textContent = ['stopped', 'error'].includes(st) ? '▶' : '■';
+    this.focus?.dirty();
   }
   renderPlan(id) {
     const n = this.agentEls.get(id);
@@ -734,6 +764,7 @@ class StudioView {
     n.querySelector('.st-foot .say').textContent = say;
     n.querySelector('.chip .say').textContent = r.info.subtitle || '';
     n.querySelector('.st-foot .q').textContent = r.info.queue ? `+${r.info.queue} queued` : '';
+    this.focus?.dirty();
   }
   renderSide(id) {
     const n = this.agentEls.get(id);
@@ -755,6 +786,7 @@ class StudioView {
     const lights = this.lightsAt(id).filter((x) => x.level !== 'skip').sort((x, y) => LEVEL_RANK[y.level] - LEVEL_RANK[x.level]);
     n.querySelector('.st-mons').innerHTML = lights.map((x) => `<div class="m ${x.level}" title="${esc(x.summary || '')}"><i></i><b>${esc(x.monitor)}</b><span>${esc(x.summary || '')}</span></div>`).join('') || '<div style="color:var(--dim);font-size:11.5px">Checked on every snapshot</div>';
     const redAt = new Set(this.rtOf(id).mons.filter((m) => m.level === 'red').map((m) => m.snap));
+    this.focus?.dirty();
     n.querySelector('.st-snaps').innerHTML = snaps.map((s) => `<i data-n="${s.n}" class="${cur && s.n === cur.n && this.T != null ? 'on' : ''} ${redAt.has(s.n) ? 'red' : ''}" title="#${s.n} ${esc(s.reason || '')} · +${s.adds} −${s.dels}"></i>`).join('');
   }
 
@@ -832,7 +864,7 @@ class StudioView {
     n.dataset.id = p.id;
     n.dataset.kind = p.kind;
     const text = TEXT_KINDS.has(p.kind);
-    n.innerHTML = `<div class="st-ph"><span class="kind">${esc(p.kind)}</span><input class="t" spellcheck="false" placeholder="Untitled"><button data-a="zoom" title="Zoom">⤢</button><button data-a="del" title="Delete">✕</button></div>
+    n.innerHTML = `<div class="st-ph"><span class="kind">${esc(p.kind)}</span><input class="t" spellcheck="false" placeholder="Untitled"><button data-a="float" title="Float: pin it over the screen, in canvas and focus mode">⧉</button><button data-a="zoom" title="Zoom">⤢</button><button data-a="del" title="Delete">✕</button></div>
       ${text ? `<textarea spellcheck="false" placeholder="Write here. Drag this panel onto an agent box to send it."></textarea>
       <div class="st-pf"><span class="grow"></span><button class="btn" data-a="copy">Copy</button><button class="btn" data-a="send">Send to…</button></div>` : '<div class="st-body"></div>'}<div class="st-resize"></div>`;
     const ti = n.querySelector('.t');
@@ -853,6 +885,7 @@ class StudioView {
       if (!b || b.closest('.st-body')) return;
       const a = b.dataset.a;
       if (a === 'zoom') this.zoomTo('panel', p.id);
+      else if (a === 'float') this.focus.toggleFloat(p.id);
       else if (a === 'del') { if (b.classList.contains('arm')) { this.ctx.submit([{ op: 'removePanel', id: p.id }], 'delete panel'); this.syncLayout(); } else { b.classList.add('arm'); b.textContent = '?'; setTimeout(() => { b.classList.remove('arm'); b.textContent = '✕'; }, 1800); } }
       else if (a === 'copy') navigator.clipboard?.writeText(ta.value).then(() => this.toast('Copied'));
       else if (a === 'send') this.sendMenu(p.id, b);
@@ -863,13 +896,21 @@ class StudioView {
     const id = uid('p');
     w ??= { terminal: 640, preview: 820, map: 620 }[kind] || 360;
     h ??= { terminal: 380, preview: 540, map: 440 }[kind] || 230;
+    const fa = this.mode === 'focus' && this.focus.fa && this.agentDef(this.focus.fa);
+    if (fa) {   // in focus mode a new panel belongs to the focused agent: a tab now, next to its box on the canvas
+      source ??= { agent: fa.id };
+      const below = this.doc.panels.filter((p) => p.source?.agent === fa.id && p.x >= fa.x + fa.w);
+      x = fa.x + fa.w + 30; y = below.length ? Math.max(...below.map((p) => p.y + p.h)) + 20 : fa.y;
+    }
     this.ctx.submit([{ op: 'addPanel', panel: { id, x: Math.round(x), y: Math.round(y), w, h, title, text, kind, source, color } }], kind);
     this.syncLayout();
+    if (fa) this.focus.setTab(id);
     if (focus) setTimeout(() => { const n = this.panelEls.get(id); (n?.querySelector('textarea') || n?.querySelector('.vt'))?.focus(); }, 40);
     return id;
   }
   /** A piece of text grabbed from a transcript, a diff, anywhere — as a panel on the canvas. */
   snippet(text, at, kind) {
+    at ||= this.toWorld(this.mouse.x, this.mouse.y);
     const t = String(text).replace(/\s+$/, '');
     const code = kind !== 'prompt' && (t.includes('\n') || /[{};=()]/.test(t));
     const lines = t.split('\n');
@@ -925,11 +966,12 @@ class StudioView {
 
   // ================================================================ director
   renderDirector() {
-    const b = this.$('[data-h="director"]');
-    if (!b || !this.doc) return;
+    if (!this.doc) return;
     const m = this.doc.config?.director || 'off';
-    b.textContent = { off: '◎ Director off', auto: '◎ Director: rules', agent: '◎ Director: agent' }[m];
-    b.classList.toggle('on', m !== 'off');
+    for (const b of this.r.querySelectorAll('[data-h="director"]')) {
+      b.textContent = { off: '◎ Director off', auto: '◎ Director: rules', agent: '◎ Director: agent' }[m];
+      b.classList.toggle('on', m !== 'off');
+    }
   }
   directorMenu(anchor) {
     const set = async (mode, preset) => {
@@ -1043,6 +1085,7 @@ class StudioView {
   moreMenu(id, anchor) {
     const a = this.agentDef(id);
     this.popList(anchor, [
+      { label: this.mode === 'focus' ? 'Show on the canvas' : 'Open in focus mode', kbd: '⌘\\', run: () => { if (this.mode === 'focus') this.setMode('canvas'); else { this.focus.fa = id; this.setMode('focus'); } } },
       { label: 'Reviewer in the same folder', run: () => this.spawn(id, 'same', 'review') },
       { label: 'Sub-agent in its own worktree…', run: () => { const t = prompt(`Task for a sub-agent working on a copy of ${a.name}'s files`); if (t) this.spawn(id, 'worktree', null, t); } },
       { label: 'Terminal here', kbd: '⌥T', run: () => this.openKind('terminal', id) },
@@ -1104,6 +1147,7 @@ class StudioView {
       try {
         const r = await this.ctx.post('/api/studio/agents', { doc: this.docId, preset: pick, name: m.querySelector('.nm').value.trim() || undefined, prompt: m.querySelector('.pr').value.trim() || undefined, sparse: m.querySelector('.sp').value.trim() || undefined, ...rect, by: 'user', who: this.ctx.me?.name });
         this.toast(`${r.name} → ${r.branch || r.cwd}`);
+        if (this.mode === 'focus') { this.focus.pending = r.id; this.focus.place(); }
       } catch (e) { this.toast(e.message, true); }
     };
     m.onclick = (e) => {
@@ -1123,6 +1167,7 @@ class StudioView {
 
   // ================================================================ gates
   renderGates(focusId) {
+    this.focus?.dirty();
     const list = this.gates, box = this.gatesEl;
     if (!list.length) { box.innerHTML = ''; return; }
     const need = list.filter((g) => g.kind !== 'info').length;
@@ -1141,6 +1186,7 @@ class StudioView {
       n.onclick = (e) => {
         const b = e.target.closest('button');
         if (!b) { this.zoomTo('agent', g.agent); this.setTarget({ kind: 'agent', id: g.agent }); return; }
+        if (this.mode === 'focus' && g.agent !== this.focus.fa) this.focus.select(g.agent);
         if (b.dataset.opt) return this.answer(g.id, b.dataset.opt);
         const x = b.dataset.x;
         if (x === 'dismiss') this.dismiss(g.id);
@@ -1180,7 +1226,7 @@ class StudioView {
     localStorage.setItem('studio.trayOff', this.trayOff ? '1' : '0');
     this.render?.();
   }
-  toggleTray() { this.trayOff = !this.trayOff; this.applyTray(); if (!this.trayOff) this.lazyDiffs(); }
+  toggleTray() { if (this.mode === 'focus') return this.focus.setTab('changes'); this.trayOff = !this.trayOff; this.applyTray(); if (!this.trayOff) this.lazyDiffs(); }
   setFilter(id, force) { this.filter = force ? id : this.filter === id ? null : id; this.renderFilter(); this.renderTray(); this.renderTimelineHead(); }
   renderFilter() {
     const f = this.$('.st-filter');
@@ -1273,7 +1319,8 @@ class StudioView {
   selectSnap(agent, n, open, path) {
     const s = this.timeline.find((x) => x.agent === agent && x.n === n);
     if (!s) return;
-    if (this.trayOff && open) this.toggleTray();
+    if (open && this.mode === 'focus') { if (agent !== this.focus.fa) this.focus.select(agent); this.focus.setTab('changes'); }
+    else if (this.trayOff && open) this.toggleTray();
     this.sel = { agent, n };
     this.scrub(s.ts);
     if (path) {
@@ -1326,7 +1373,7 @@ class StudioView {
     c.querySelector('.mk').innerHTML = ms.map((m) => `<b class="${m.level}" title="${esc(m.summary || '')}">${esc(m.monitor)}</b>`).join('');
   }
   lazyDiffs() {
-    if (this.trayOff) return;
+    if (this.trayOff && this.mode !== 'focus') return;
     const top = this.tbody.scrollTop, bot = top + this.tbody.clientHeight + 300;
     for (const c of this.tbody.querySelectorAll('.dcard:not([data-loaded])')) { const y = c.offsetTop; if (y + c.offsetHeight >= top - 300 && y <= bot) this.loadDiff(c); }
   }
@@ -1401,6 +1448,7 @@ class StudioView {
       for (const a of this.doc.agents) {
         const c = a.color, st = this.rtOf(a.id).info.status;
         L.push({ c, t: `Go to ${a.name}`, x: st, run: () => this.zoomTo('agent', a.id) });
+        L.push({ c, t: `Focus on ${a.name}`, x: 'focus mode', run: () => { this.focus.fa = a.id; if (this.mode === 'focus') this.focus.select(a.id); else this.setMode('focus'); } });
         L.push({ c, t: `Review ${a.name}`, x: '⌥R', run: () => this.review(a.id) });
         L.push({ c, t: `Fork ${a.name}`, x: '⌥F', run: () => this.fork(a.id) });
         L.push({ c, t: `Reviewer for ${a.name} in the same folder`, run: () => this.spawn(a.id, 'same', 'review') });
@@ -1410,7 +1458,11 @@ class StudioView {
         L.push({ c, t: `Interrupt ${a.name}`, x: '⌥.', run: () => this.cancel(a.id) });
         L.push({ c, t: `Diffs of ${a.name}`, x: '⌥D', run: () => this.setFilter(a.id) });
       }
-      for (const p of this.doc.panels) L.push({ i: '¶', t: `Go to ${p.kind} “${p.title || p.kind}”`, run: () => this.zoomTo('panel', p.id) });
+      L.push({ i: '◧', t: this.mode === 'focus' ? 'Canvas mode — every box on the canvas' : 'Focus mode — a classic coding view of one agent', x: '⌘\\', run: () => this.setMode(this.mode === 'focus' ? 'canvas' : 'focus') });
+      for (const p of this.doc.panels) {
+        L.push({ i: '¶', t: `Go to ${p.kind} “${p.title || p.kind}”`, run: () => this.zoomTo('panel', p.id) });
+        L.push({ i: '⧉', t: `${p.float ? 'Unfloat' : 'Float'} ${p.kind} “${p.title || p.kind}”`, run: () => this.focus.toggleFloat(p.id) });
+      }
       for (const [k, label] of Object.entries(MODES)) L.push({ i: '▤', t: `Arrange: ${label}`, run: () => this.applyOps(arrange(this.doc, k, { focus: hov }), `arrange ${k}`) });
       for (const Lt of this.doc.layouts || []) L.push({ i: '↺', t: `Layout: ${Lt.name}`, run: () => this.applyOps(applyLayout(this.doc, Lt), `layout ${Lt.name}`) });
       for (const [m, t] of [['off', 'Director off — the screen is yours'], ['auto', 'Director: built-in rules'], ['agent', 'Director: a director agent decides']]) L.push({ i: '◎', t, run: () => this.ctx.post('/api/studio/director', { doc: this.docId, mode: m, by: 'user' }).catch((e) => this.toast(e.message, true)) });
@@ -1466,6 +1518,7 @@ class StudioView {
       ['drag a prompt', 'A prompt bubble onto another box: run it there'], ['drag a note', 'Onto a box: send it'], ['Y A N', 'Answer the permission of the box you point at'],
       ['⌥R ⌥F', 'Review · fork the box you point at'], ['⌥T ⌥M', 'Terminal · code map for it'], ['⌥S ⌥. ⌥Z', 'Start/stop · interrupt · zoom'],
       ['G', 'Next gate (who needs you)'], ['[ ]', 'Previous / next snapshot'], ['P', 'Replay every change'], ['Esc', 'Back to live · fit all'],
+      ['⌘\\', 'Focus mode ⇄ canvas'], ['⧉', 'Float a panel over the screen (both modes)'], ['↑ ↓ (focus)', 'Previous / next agent'],
       ['L', 'Arrange · saved layouts'], ['D', 'Director: off · rules · agent'], ['B', 'Show / hide the changes tray'], ['drag · wheel', 'Pan'], ['pinch · ⌘ wheel', 'Zoom'], ['⌘K', 'Spotlight: commands, previews, SQL'],
     ];
     o.innerHTML = `<div><h3>Studio keys</h3>${K.map(([k, t]) => `<p><kbd>${esc(k)}</kbd><span>${esc(t)}</span></p>`).join('')}</div>`;
