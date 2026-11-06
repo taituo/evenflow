@@ -4,7 +4,7 @@
 // but the client is a browser window.
 //
 //   node bin/remote.mjs me@box                     start the studio on the box if it is not running, tunnel, open /studio
-//   node bin/remote.mjs me@box --dir ~/src/spread --port 3210 --local 3310 --root ~/work/monorepo
+//   node bin/remote.mjs me@box --dir ~/src/evenflow --port 3210 --local 3310 --root ~/work/monorepo
 //   node bin/remote.mjs me@box --no-start --no-open
 //
 // The server on the box listens on 127.0.0.1 only; nothing is exposed. Voice glue on the Mac (Parakeet → text,
@@ -16,16 +16,16 @@ import path from 'node:path';
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => { const i = args.indexOf('--' + name); if (i < 0) return dflt; const v = args[i + 1]; args.splice(i, v && !v.startsWith('--') ? 2 : 1); return v && !v.startsWith('--') ? v : true; };
-const dir = flag('dir', '~/spread');
+const dir = flag('dir', '~/evenflow');
 const port = +flag('port', 3210);
 const local = +flag('local', port);
 const root = flag('root', null);
 const noStart = flag('no-start', false) === true;
 const noOpen = flag('no-open', false) === true;
 const host = args.find((a) => !a.startsWith('--'));
-if (!host) { console.error('usage: node bin/remote.mjs user@host [--dir ~/spread] [--port 3210] [--local 3210] [--root /path/to/repo] [--no-start] [--no-open]'); process.exit(2); }
+if (!host) { console.error('usage: node bin/remote.mjs user@host [--dir ~/evenflow] [--port 3210] [--local 3210] [--root /path/to/repo] [--no-start] [--no-open]'); process.exit(2); }
 
-const control = path.join(os.tmpdir(), `spread-ssh-%r@%h-%p`);
+const control = path.join(os.tmpdir(), `evenflow-ssh-%r@%h-%p`);
 const SSH = ['-o', 'ControlMaster=auto', '-o', `ControlPath=${control}`, '-o', 'ControlPersist=10m', '-o', 'ServerAliveInterval=20', '-o', 'BatchMode=yes'];
 const ssh = (cmd) => execFileSync('ssh', [...SSH, host, cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;

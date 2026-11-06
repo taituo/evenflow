@@ -21,7 +21,9 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
   for (let i = 0; i < 50; i++) { try { await fetch(B + '/api/help'); break; } catch { await sleep(100); } }
   const api = async (p, body) => { const r = await fetch(B + p, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); const t = await r.text(); try { return JSON.parse(t); } catch { return t; } };
   const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
+  // E2E_VIEW=1680x1050@2 for documentation screenshots (default: a 1440p monitor at 1×)
+  const [, VW, VH, VD] = /^(\d+)x(\d+)(?:@([\d.]+))?$/.exec(process.env.E2E_VIEW || '2560x1440@1');
+  const page = await browser.newPage({ viewport: { width: +VW, height: +VH }, deviceScaleFactor: +(VD || 1) });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -63,7 +65,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     });
 
     await step('a note dragged onto the box is sent as a prompt', async () => {
-      await page.mouse.move(1500, 400);
+      await page.mouse.move(VW * 0.59, VH * 0.28);
       await page.keyboard.press('t');
       await page.waitForSelector('.st-panel textarea:focus');
       await page.keyboard.type('fix it please');
@@ -81,7 +83,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     await step('the tray has a diff card per snapshot; [ scrubs back, Esc returns to live', async () => {
       const cards = await page.locator('.dcard').count();
       assert.ok(cards >= 4, `cards: ${cards}`);
-      await page.mouse.move(1500, 300);
+      await page.mouse.move(VW * 0.59, VH * 0.21);
       await page.keyboard.press('[');
       await page.waitForSelector('.st-thead .golive.past');
       assert.equal(await page.locator('.dcard.sel').count(), 1);
@@ -112,7 +114,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     await step('a real terminal in the box\'s worktree: ⌥T, then point + type', async () => {
       await page.keyboard.press('Escape');
       const ag = await page.locator('.st-agent').first().boundingBox();
-      await page.mouse.move(ag.x + ag.width / 2, ag.y + 60);
+      await page.mouse.move(ag.x + 40, ag.y + ag.height / 2);
       await page.keyboard.press('Alt+KeyT');
       await page.waitForSelector('.st-panel.terminal .vt');
       await sleep(900);
@@ -126,7 +128,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     await step('select text + S grabs it as a snippet panel', async () => {
       const n0 = await page.locator('.st-panel.snippet, .st-panel.note').count();
       await page.evaluate(() => { const td = [...document.querySelectorAll('.dfile td.c')].find((x) => x.textContent.includes('return')); const r = document.createRange(); r.selectNodeContents(td); getSelection().removeAllRanges(); getSelection().addRange(r); });
-      await page.mouse.move(1500, 500);
+      await page.mouse.move(VW * 0.59, VH * 0.35);
       await page.locator('.st').press('s');
       await until(async () => (await page.locator('.st-panel.snippet, .st-panel.note').count()) > n0, 4000, 'snippet panel');
     });
@@ -145,6 +147,9 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
       await page.locator('.st-seg [data-h="theme"]').click();
       const t2 = await page.locator('.st').getAttribute('data-theme');
       assert.notEqual(t1, t2);
+      await page.keyboard.press('Escape');
+      await sleep(700);
+      await page.screenshot({ path: path.join(SHOTS, '3a-canvas-theme.png') });
     });
 
     await step('idle: panels fade one by one and the shader stays; any input wakes it', async () => {
@@ -160,7 +165,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     });
 
     await step('zooming out turns boxes into readable tiles', async () => {
-      await page.mouse.move(1280, 500);
+      await page.mouse.move(VW / 2, VH * 0.35);
       await page.keyboard.down('Control');
       for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, 240); await sleep(30); }
       await page.keyboard.up('Control');
@@ -171,7 +176,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
     });
 
     await step('⌘\\ switches to focus mode: agents on the left, the session in the middle, tabs on the right', async () => {
-      await page.mouse.move(1280, 500);
+      await page.mouse.move(VW / 2, VH * 0.35);
       await page.keyboard.press('Control+Backslash');
       await page.waitForSelector('.st.focus');
       assert.equal(await page.locator('.fx-ag').count(), 2);
@@ -238,7 +243,7 @@ async function until(fn, ms = 10000, what = 'condition') { const t0 = Date.now()
       assert.equal(r.moved, 2);
       await page.waitForSelector('.st.focus');
       await page.waitForSelector('.fx-session .st-ah .nm:text-is("Auth")');
-      await until(async () => { const b = await page.locator('.st-panel.terminal.is-float').boundingBox(); return b && Math.abs(b.x - 2560 * 0.05) < 4 && Math.abs(b.y - 1440 * 0.55) < 4; }, 4000, 'floated where the director put it');
+      await until(async () => { const b = await page.locator('.st-panel.terminal.is-float').boundingBox(); return b && Math.abs(b.x - VW * 0.05) < 4 && Math.abs(b.y - VH * 0.55) < 4; }, 4000, 'floated where the director put it');
       await page.waitForSelector('.fx-tabs .tab.on[data-tab="changes"]');
       await page.waitForSelector('.st-toast:text("Auth is the one to watch")');
       await page.screenshot({ path: path.join(SHOTS, '6-focus-director.png') });

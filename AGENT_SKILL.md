@@ -272,7 +272,7 @@ Text docs: `setText {text}` · `append {text}`. Every sheet op takes an optional
 
 ## Studio: driving other coding agents
 
-A studio canvas holds ACP coding agents (see STUDIO.md). An agent can orchestrate them over HTTP:
+A studio canvas holds ACP coding agents (see docs/README.md in the Evenflow repository). An agent can orchestrate them over HTTP:
 
 ```
 GET  /api/studio                                    who is doing what, their monitor lights, open gates

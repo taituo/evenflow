@@ -18,6 +18,7 @@ export class Focus {
     this.fa = localStorage.getItem('studio.fa.' + v.docId) || null;   // the focused agent
     this.tab = 'changes';
     this.rp = clamp(+(localStorage.getItem('studio.rp') || 0) || 480, 320, 1400);
+    this.fz = clamp(+(localStorage.getItem('studio.fz') || 0) || 1, 0.8, 1.6);   // text size in focus mode
     this.build();
   }
   get on() { return this.v.mode === 'focus'; }
@@ -28,11 +29,11 @@ export class Focus {
     f.innerHTML = `
       <aside class="fx-side">
         <div class="fx-brand"><b>Evenflow</b><span class="root"></span></div>
-        <button class="fx-new" data-x="new"><span>＋</span>New agent<kbd>N</kbd></button>
+        <button class="fx-new" data-x="new"><span>＋</span>New agent</button>
         <div class="fx-h">Agents</div>
         <div class="fx-list"></div>
         <div class="fx-gslot"></div>
-        <div class="fx-foot"><button data-h="mode" title="Back to the canvas (⌘\\)">⊞ Canvas</button><button data-h="director"></button><button data-h="theme"></button><button data-h="spot" title="Spotlight">⌘K</button></div>
+        <div class="fx-foot"><button data-h="mode" title="Back to the canvas (⌘\\)">⊞ Canvas</button><button data-h="director"></button><button data-h="theme"></button><button data-h="spot" title="Spotlight">⌘K</button><button data-x="tz" title="Text size (⌘+ ⌘− ⌘0)">Aa</button></div>
       </aside>
       <main class="fx-main">
         <div class="fx-session"></div>
@@ -47,8 +48,13 @@ export class Focus {
     this.list = $('.fx-list'); this.session = $('.fx-session'); this.ta = $('.fx-composer textarea'); this.ask = $('.fx-ask');
     this.tabsEl = $('.fx-tabs'); this.changes = $('.fx-changes'); this.sum = $('.fx-sum'); this.pslot = $('.fx-pslot'); this.gslot = $('.fx-gslot');
     f.style.setProperty('--rp', this.rp + 'px');
+    f.style.setProperty('--fz', String(this.fz));
 
-    $('.fx-foot').onclick = (e) => { const b = e.target.closest('button[data-h]'); if (b) v.hudAction(b); };
+    $('.fx-foot').onclick = (e) => {
+      const b = e.target.closest('button');
+      if (b?.dataset.h) return v.hudAction(b);
+      if (b?.dataset.x === 'tz') v.popList(b, [0.9, 1, 1.1, 1.25, 1.4].map((z) => ({ label: `${Math.round(z * 100)} %${Math.abs(z - this.fz) < 0.01 ? '  ✓' : ''}`, run: () => this.textSize(null, z) })), 140);
+    };
     $('.fx-new').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); v.picker({}, r.right + 8, r.top); };
     this.list.onclick = (e) => { const r = e.target.closest('[data-id]'); if (r) this.select(r.dataset.id); };
     this.list.ondblclick = (e) => { const r = e.target.closest('[data-id]'); if (r) v.setMode('canvas'); };
@@ -100,7 +106,7 @@ export class Focus {
       e.preventDefault();
       grip.setPointerCapture(e.pointerId);
       const x0 = e.clientX, w0 = this.rp;
-      const mv = (ev) => { this.rp = clamp(w0 + (x0 - ev.clientX), 320, Math.max(320, v.r.clientWidth - 248 - 380)); f.style.setProperty('--rp', this.rp + 'px'); v.r.style.setProperty('--rp', this.rp + 'px'); };
+      const mv = (ev) => { this.rp = clamp(w0 + (x0 - ev.clientX) / this.fz, 320, Math.max(320, v.r.clientWidth - 264 - 380)); f.style.setProperty('--rp', this.rp + 'px'); v.r.style.setProperty('--rp', this.rp + 'px'); };
       const up = () => { grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); localStorage.setItem('studio.rp', String(this.rp)); };
       grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up);
     });
@@ -207,6 +213,14 @@ export class Focus {
     if (p.float) { const n = v.panelEls.get(id); n?.classList.remove('flash'); void n?.offsetWidth; n?.classList.add('flash'); return; }
     if (p.source?.agent && v.agentDef(p.source.agent)) this.select(p.source.agent, id);
     else this.setTab(id);
+  }
+
+  /** ⌘+ / ⌘− / ⌘0 in focus mode: the text, not the camera. */
+  textSize(step, to) {
+    this.fz = to ?? (step === 0 ? 1 : clamp(Math.round((this.fz + step * 0.1) * 10) / 10, 0.8, 1.6));
+    this.el.style.setProperty('--fz', String(this.fz));
+    try { localStorage.setItem('studio.fz', String(this.fz)); } catch {}
+    this.v.toast(`Text ${Math.round(this.fz * 100)} %`);
   }
 
   // ---------------------------------------------------------------- floating
@@ -355,13 +369,14 @@ export class Focus {
       const o = perm.json.options.find((x) => x.kind === want) || perm.json.options.find((x) => x.kind?.startsWith(k.toLowerCase() === 'n' ? 'reject' : 'allow'));
       if (o) { e.preventDefault(); v.answer(perm.id, o.optionId); return true; }
     }
-    if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'j' || k === 'k') {
+    if (k === 'ArrowDown' || k === 'ArrowUp') {
       const ags = v.doc.agents, i = ags.findIndex((a) => a.id === id);
-      const nx = ags[clamp(i + (k === 'ArrowDown' || k === 'j' ? 1 : -1), 0, ags.length - 1)];
+      const nx = ags[clamp(i + (k === 'ArrowDown' ? 1 : -1), 0, ags.length - 1)];
       if (nx) { e.preventDefault(); this.select(nx.id); }
       return true;
     }
-    const map = { '[': () => v.step(-1), ']': () => v.step(1), '?': () => v.help(), g: () => v.nextGate(), p: () => v.togglePlay(), b: () => this.setTab('changes'), d: () => v.directorMenu(this.el.querySelector('[data-h="director"]')), n: () => { const b = this.el.querySelector('.fx-new').getBoundingClientRect(); v.picker({}, b.right + 8, b.top); } };
+    // letters are for writing: in focus mode only keys that are not letters are shortcuts (⌘K has every command)
+    const map = { '[': () => v.step(-1), ']': () => v.step(1), '?': () => v.help() };
     if (map[k]) { e.preventDefault(); map[k](); return true; }
     const selText = window.getSelection()?.toString();
     if ((k === 's' || k === 'S') && selText?.trim()) { e.preventDefault(); v.snippet(selText, null); return true; }

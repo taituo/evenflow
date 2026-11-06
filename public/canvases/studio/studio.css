@@ -369,7 +369,17 @@
 .st-ghost { position: fixed; z-index: 60; pointer-events: none; max-width: 320px; padding: 7px 11px; border-radius: 9px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--shadow-lg); font: 12px/1.4 var(--mono); color: var(--text); white-space: pre-wrap; overflow: hidden; max-height: 120px; }
 
 /* ================================================================ focus mode: a classic coding UI around one agent */
-.st-focus { position: absolute; inset: 0; z-index: 3; display: none; grid-template-columns: 252px minmax(360px, 1fr) 1px var(--rp, 480px); background: var(--card); }
+/* text is a size up from the canvas, and ⌘+ / ⌘− scale it (zoom keeps the layout in proportion) */
+.st-focus { position: absolute; inset: 0; z-index: 3; display: none; grid-template-columns: 264px minmax(360px, 1fr) 1px var(--rp, 480px); background: var(--card); zoom: var(--fz, 1); font-size: 14px; }
+.st.focus .st-log { font-size: 15px; line-height: 1.6; }
+.st.focus .ev.tool, .st.focus .ev.agent code { font-size: 13px; }
+.st.focus .ev.agent pre, .st.focus .ev.tool-out { font-size: 12.5px; }
+.st.focus .ev.thought, .st.focus .ev.system { font-size: 13px; }
+.st.focus .st-plan li { font-size: 13.5px; }
+.st.focus .dfile table { font-size: 12.5px; }
+.st.focus .dfile .fh, .st.focus .st-files { font-size: 12.5px; }
+.st.focus .dcard > header { font-size: 13px; }
+.st.focus .st-gates .gate { font-size: 13px; }
 .st.focus .st-focus { display: grid; }
 .st.focus .st-canvas, .st.focus .st-hud, .st.focus .st-target, .st.focus .st-help { display: none; }
 .st-focus > * { min-width: 0; min-height: 0; transition: opacity .6s; }
@@ -392,10 +402,10 @@
 .fx-ag > i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-top: 6px; }
 .fx-ag.s-working > i { animation: st-pulse 1.6s ease-in-out infinite; }
 .fx-ag .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.fx-ag .l1 b { font-weight: 550; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-ag .l1 b { font-weight: 550; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-ag .l1 .red { color: var(--red); font-size: 9px; }
 .fx-ag .l1 .pill { margin-left: auto; font-size: 10px; padding: 2px 6px; background: none; }
-.fx-ag .l2 { color: var(--muted); font-size: 12px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-top: 1px; }
+.fx-ag .l2 { color: var(--muted); font-size: 13px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-top: 1px; }
 .fx-ag .g { font: 600 10.5px/1 var(--font); background: var(--fill); color: var(--text); border-radius: 99px; padding: 3px 6px; margin-top: 3px; }
 .fx-ag .g.blk { background: var(--amber); color: #fff; }
 .fx-gslot { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -424,7 +434,7 @@
 .fx-composer { flex: none; padding: 0 max(20px, calc((100% - 820px) / 2)) 18px; --c: #6366f1; }
 .fx-composer .box { border: 1px solid var(--line2); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); padding: 10px 10px 8px 14px; transition: border-color .15s, box-shadow .15s; }
 .fx-composer .box:focus-within { border-color: var(--ring); }
-.fx-composer textarea { width: 100%; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 14px/1.5 var(--font); user-select: text; min-height: 24px; max-height: 240px; padding: 2px 0 6px; }
+.fx-composer textarea { width: 100%; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 15px/1.5 var(--font); user-select: text; min-height: 24px; max-height: 240px; padding: 2px 0 6px; }
 .fx-composer textarea::placeholder { color: var(--dim); }
 .fx-composer .row { display: flex; align-items: center; gap: 8px; }
 .fx-composer .row .grow { flex: 1; }
@@ -442,7 +452,7 @@
 .fx-grip:hover { background: var(--line2); }
 .fx-pane { display: flex; flex-direction: column; background: var(--card); }
 .fx-tabs { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 8px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; scrollbar-width: none; }
-.fx-tabs .tab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; color: var(--muted); font-size: 12.5px; white-space: nowrap; max-width: 220px; flex: none; --c: var(--dim); }
+.fx-tabs .tab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; color: var(--muted); font-size: 13.5px; white-space: nowrap; max-width: 220px; flex: none; --c: var(--dim); }
 .fx-tabs .tab:hover { background: var(--hover); color: var(--text); }
 .fx-tabs .tab.on { background: var(--fill); color: var(--text); font-weight: 500; box-shadow: 0 0 0 1px var(--line); }
 .fx-tabs .tab .ic { color: var(--c); font-size: 12px; width: 14px; text-align: center; }
@@ -473,7 +483,7 @@
 .st-panel.in-pane .shield, .st-panel.is-float .shield { display: none; }
 
 /* subtitles over the session in focus mode */
-.st.focus .st-subs { left: calc(252px + (100% - 252px - var(--rp, 480px)) / 2); bottom: 150px; width: min(720px, calc(100% - 252px - var(--rp, 480px) - 48px)); }
+.st.focus .st-subs { left: calc(264px + (100% - 264px - var(--rp, 480px)) / 2); bottom: 150px; width: min(720px, calc(100% - 264px - var(--rp, 480px) - 48px)); }
 .st.focus .st-subs .line { font-size: 17px; }
 
 /* ================================================================ floating panels: pinned to the screen, in both modes */
@@ -494,3 +504,4 @@
 .st.focus .dcard:hover > header .acts, .st.focus .dcard.sel > header .acts { display: flex; }
 .st.focus .dcard:hover > header .r { flex: 1 1 0; }
 .dcard > header .acts button { white-space: nowrap; }
+.st.has-agents .st-help { display: none; }   /* the hints are for an empty canvas; ? has all keys */

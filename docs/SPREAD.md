@@ -24,7 +24,7 @@ npm run e2e        # 29 browser tests (Playwright): two users, Live, slides, tra
 ## Contents
 
 - [Why](#why)
-- [Studio: coding agents](#studio-coding-agents-on-a-canvas) · [STUDIO.md](../STUDIO.md)
+- [Studio: coding agents](#studio-coding-agents-on-a-canvas) · [STUDIO.md](README.md)
 - [The grid](#the-grid)
 - [Named tables](#named-tables-structured-data)
 - [Traffic lights](#traffic-lights)
@@ -56,9 +56,9 @@ interface they're good at, on top of one versioned document:
 
 ## Studio: coding agents on a canvas
 
-[![Studio](studio.jpg)](../STUDIO.md)
+[![Studio](studio.jpg)](README.md)
 
-`/studio` is a full-screen canvas for coding agents, in light and dark. Draw a box and an [ACP](https://agentclientprotocol.com) agent (Kiro CLI, a Claude Code or Gemini ACP adapter, or the built-in mock) starts in its own git worktree — or a sparse slice of a monorepo. Point at a box and type (or talk) to steer it; agents get tools of their own to spin off a copy, start a reviewer, or put a preview on the screen. Every step is SQL, every file change a snapshot in a shadow git, checked by deterministic monitors; where an agent needs you shows up as a gate. All diffs scroll at the bottom on one timeline you can replay, rewind or fork from. Real terminals, live previews (dev servers, voxl desktops), code maps, notes and snippets sit on the same canvas; idle, it turns into a shader screensaver of the agents at work. Run it on a Linux box and look at it from your Mac with `node bin/remote.mjs me@box`. → **[STUDIO.md](../STUDIO.md)**
+`/studio` is a full-screen canvas for coding agents, in light and dark. Draw a box and an [ACP](https://agentclientprotocol.com) agent (Kiro CLI, a Claude Code or Gemini ACP adapter, or the built-in mock) starts in its own git worktree — or a sparse slice of a monorepo. Point at a box and type (or talk) to steer it; agents get tools of their own to spin off a copy, start a reviewer, or put a preview on the screen. Every step is SQL, every file change a snapshot in a shadow git, checked by deterministic monitors; where an agent needs you shows up as a gate. All diffs scroll at the bottom on one timeline you can replay, rewind or fork from. Real terminals, live previews (dev servers, voxl desktops), code maps, notes and snippets sit on the same canvas; idle, it turns into a shader screensaver of the agents at work. Run it on a Linux box and look at it from your Mac with `node bin/remote.mjs me@box`. → **[STUDIO.md](README.md)**
 
 ## The grid
 
@@ -107,7 +107,7 @@ Color cells by their value — 🚦 in the toolbar or right-click → *Traffic l
 Show a value as a picture: a lamp, a switch, a gauge, a battery, a progress ring, a traffic light, a status icon,
 the weather — or anything a model draws for you. 🎨 in the toolbar.
 
-- **Three kinds, one standard** — [`spread-viz/1`](VIZ_SPEC.md): `toggle` (on/off), `range` (0–100, or any
+- **Three kinds, one standard** — [`spread-viz/1`](../VIZ_SPEC.md): `toggle` (on/off), `range` (0–100, or any
   min–max) and `states` (2–12 named pictures picked by rules like the traffic lights'). A pack is one JSON file with
   SVG inside: CSS variables (`--v`, `--pct`), `data-state` / `data-level` and `{{value}}` placeholders do the rest.
 - **Anywhere**: `=VIZ("status", C7)` in a cell (the cell keeps its value for sorting, formulas and SQL; put it in a
@@ -386,7 +386,7 @@ line, a running track — and puts the rows of other tables on it by **distance*
 
 A `multi` pack takes a range — `=VIZ("tyre-panel", B2:D2, "FL tire")`, or a card on `B2:J2` — with a color input
 for liveries; any range pack takes its scale where it is used (`=VIZ("arc", A1, "°C", 60, 150)`); a card's label can
-come from a cell (`"label": "=Data!C35"`). See [`VIZ_SPEC.md`](VIZ_SPEC.md).
+come from a cell (`"label": "=Data!C35"`). See [`VIZ_SPEC.md`](../VIZ_SPEC.md).
 
 ## Slides
 
@@ -447,7 +447,7 @@ resolution; Live also steps down on its own when frames get slow.
 
 ## For agents
 
-The full guide is [`AGENT_SKILL.md`](AGENT_SKILL.md) (also served at `GET /api/help`). The loop:
+The full guide is [`AGENT_SKILL.md`](../AGENT_SKILL.md) (also served at `GET /api/help`). The loop:
 
 ```bash
 cm overview                 # docs, sheets, used ranges, tables, charts, the user's selection
@@ -495,7 +495,7 @@ cm demo --step 13     # one step (card looks)
 ```
 
 An agent runs the same tour over MCP (`spread_demo`, step by step, telling you what to watch) or the CLI.
-[`FEATURES.md`](FEATURES.md) lists every feature with how to try it and which demo step shows it — a checklist for
+[`FEATURES.md`](../FEATURES.md) lists every feature with how to try it and which demo step shows it — a checklist for
 manual testing.
 
 ## Versioning

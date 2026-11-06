@@ -114,7 +114,7 @@ class StudioView {
       <div class="st-canvas"><div class="st-grid"></div><div class="st-world"><svg class="st-links"></svg></div></div>
       <div class="st-float"></div>
       <div class="st-ticker"></div>
-      <div class="st-hud"><div class="st-brand"><b>Studio</b><span class="root"></span></div>
+      <div class="st-hud"><div class="st-brand"><b>Evenflow</b><span class="root"></span></div>
         <div class="st-seg"><span class="z"></span><button data-h="fit" title="Fit everything (Esc)">Fit</button><button data-h="arrange" title="Arrange boxes · saved layouts (L)">Arrange</button><button data-h="mode" title="Focus mode: a classic coding view of one agent, panels as tabs (⌘\\)">◧ Focus</button><button data-h="director" title="Director: who runs the screen — you, the built-in rules, or a director agent (D)"></button><button data-h="theme" title="Light / dark / system"></button><button data-h="spot" title="Spotlight">⌘K</button></div></div>
       <div class="st-target" title="Typing and voice go here (point at a box to change)"><span>→</span><span class="chip">nothing yet</span></div>
       <div class="st-gates"></div>
@@ -179,6 +179,8 @@ class StudioView {
       if (!(e.metaKey || e.ctrlKey) || !this.r.isConnected) return;
       if (e.key.toLowerCase() === 'k') { e.preventDefault(); this.spotlight(); }
       else if (e.key === '\\' || e.code === 'Backslash') { e.preventDefault(); this.setMode(this.mode === 'focus' ? 'canvas' : 'focus'); }
+      // ⌘+ ⌘− ⌘0: the camera on the canvas, the text size in focus mode
+      else if (this.mode === 'focus' && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); this.focus.textSize(e.key === '0' ? 0 : e.key === '-' ? -1 : 1); }
     });
     this.on(window, 'keyup', (e) => { if (e.code === 'Space') this.space = false; });
     this.on(window, 'resize', () => this.render());
@@ -403,6 +405,7 @@ class StudioView {
       if (ta && document.activeElement !== ta && !node.classList.contains('streaming') && ta.value !== p.text) ta.value = p.text;
       this.bodies.get(p.id)?.update?.(p);
     }
+    this.r.classList.toggle('has-agents', d.agents.length > 0);
     this.focus?.place();
     this.renderLinks();
     this.render();
@@ -1223,7 +1226,7 @@ class StudioView {
         if (b.dataset.opt) return this.answer(g.id, b.dataset.opt);
         const x = b.dataset.x;
         if (x === 'dismiss') this.dismiss(g.id);
-        else if (x === 'reply') { this.setTarget({ kind: 'agent', id: g.agent }); this.openInput({ kind: 'agent', id: g.agent }, ''); }
+        else if (x === 'reply') { this.setTarget({ kind: 'agent', id: g.agent }); if (this.mode === 'focus') { this.focus.select(g.agent); this.focus.ta.focus(); } else this.openInput({ kind: 'agent', id: g.agent }, ''); }
         else if (x === 'review') { this.review(g.agent); this.dismiss(g.id); }
         else if (x === 'show') { this.zoomTo('agent', g.agent); if (g.json?.snap != null) { this.setFilter(g.agent, true); this.selectSnap(g.agent, g.json.snap, true); } }
         else if (x === 'fix') this.prompt(g.agent, `The ${g.json?.monitor || ''} monitor is red: ${g.detail}. Fix it.`);
@@ -1237,6 +1240,7 @@ class StudioView {
 
   // ================================================================ subtitles
   subtitle(id, text) {
+    if (this.mode === 'focus' && id === this.focus.fa) return;   // its transcript is already in front of you
     const t = this.target?.kind === 'agent' ? this.target.id : null;
     if (t && t !== id && this.rtOf(t).info.status === 'working') return;
     const s = this.subs;
@@ -1384,7 +1388,7 @@ class StudioView {
     c.dataset.agent = s.agent; c.dataset.n = s.n; c.dataset.ts = s.ts;
     c.style.setProperty('--c', this.color(s.agent));
     c.innerHTML = `<header><span class="ag"><i></i>${esc(this.name(s.agent))}</span><span class="n">#${s.n}</span><span class="r"></span><span class="mk"></span><span class="num"><span class="a">+${s.adds}</span> <span class="d">−${s.dels}</span></span><span class="ts">${hhmm(s.ts)}</span>
-      <span class="acts"><button data-x="go" title="Show the studio as it was here">⏪ here</button><button data-x="fork" title="New agent from this moment">⑂ fork</button><button data-x="rewind" title="Put the working directory back to this snapshot">↺ rewind</button><button data-x="snip" title="The diff as a snippet on the canvas">⧉ grab</button></span></header><div class="body"></div>`;
+      <span class="acts"><button data-x="go" title="Show the studio as it was here">⏪ here</button><button data-x="fork" title="New agent from this moment">⑂ fork</button><button data-x="rewind" title="Put the working directory back to this snapshot (the conversation carries on)">⟲ rewind</button><button data-x="snip" title="The diff as a snippet on the canvas">⧉ grab</button></span></header><div class="body"></div>`;
     c.querySelector('.r').textContent = s.reason || '';
     c.querySelector('.r').title = s.reason || '';
     this.markCard(s.agent, s.n, c);
@@ -1394,7 +1398,7 @@ class StudioView {
       const x = b.dataset.x;
       if (x === 'go') { this.sel = { agent: s.agent, n: s.n }; this.scrub(s.ts); }
       else if (x === 'fork') this.fork(s.agent, s.n);
-      else if (x === 'rewind') { if (b.classList.contains('arm')) this.rewind(s.agent, s.n); else { b.classList.add('arm'); b.textContent = '↺ sure?'; setTimeout(() => { b.classList.remove('arm'); b.textContent = '↺ rewind'; }, 2500); } }
+      else if (x === 'rewind') { if (b.classList.contains('arm')) this.rewind(s.agent, s.n); else { b.classList.add('arm'); b.textContent = '⟲ sure?'; setTimeout(() => { b.classList.remove('arm'); b.textContent = '⟲ rewind'; }, 2500); } }
       else if (x === 'snip') { const d = await this.fetchDiff(s.agent, s.n); const b2 = this.box(); this.snippet(d.patch, this.toWorld(b2.left + b2.width / 2, b2.top + b2.height / 3)); }
     };
     return c;
@@ -1545,7 +1549,13 @@ class StudioView {
   help() {
     this.closeOverlays();
     const o = el('div', 'st-help-ov');
-    const K = [
+    const F = [
+      ['typing', 'Goes to the composer: letters are for writing'], ['↵', 'Send · ⇧↵ new line'], ['↑ (empty composer)', 'Recall the last prompt'],
+      ['↑ ↓', 'Previous / next agent (when not typing)'], ['Y N', 'Answer the permission (when not typing)'], ['⟲ on a prompt', 'Rewind: conversation, files, or both'],
+      ['⌥R ⌥F ⌥T ⌥M', 'Review · fork · terminal · code map'], ['⌥S ⌥.', 'Start/stop · interrupt'], ['[ ]', 'Previous / next snapshot'], ['Esc', 'Back to live'],
+      ['⧉', 'Float a panel over the screen (both modes)'], ['⌘+ ⌘− ⌘0', 'Text size'], ['⌘\\', 'Back to the canvas'], ['⌘K', 'Every command: new agent, gates, replay, director…'],
+    ];
+    const K = this.mode === 'focus' ? F : [
       ['Shift+drag', 'Draw a box → new agent'], ['N', 'Then drag: new agent'], ['point + type', 'Talk to the box under the pointer'], ['↵ or /', 'Floating input for what you point at'],
       ['Tab', '(in the input) next target'], ['T · double-click', 'New note'], ['select + S', 'Grab the selected text as a snippet'], ['drag text', 'Onto the canvas: a snippet · onto a box: send it'],
       ['drag a prompt', 'A prompt bubble onto another box: run it there'], ['drag a note', 'Onto a box: send it'], ['Y A N', 'Answer the permission of the box you point at'],
@@ -1554,7 +1564,7 @@ class StudioView {
       ['⌘\\', 'Focus mode ⇄ canvas'], ['⧉', 'Float a panel over the screen (both modes)'], ['↑ ↓ (focus)', 'Previous / next agent'],
       ['L', 'Arrange · saved layouts'], ['D', 'Director: off · rules · agent'], ['B', 'Show / hide the changes tray'], ['drag · wheel', 'Pan'], ['pinch · ⌘ wheel', 'Zoom'], ['⌘K', 'Spotlight: commands, previews, SQL'],
     ];
-    o.innerHTML = `<div><h3>Studio keys</h3>${K.map(([k, t]) => `<p><kbd>${esc(k)}</kbd><span>${esc(t)}</span></p>`).join('')}</div>`;
+    o.innerHTML = `<div><h3>Keys · ${this.mode === 'focus' ? 'focus mode' : 'canvas'}</h3>${K.map(([k, t]) => `<p><kbd>${esc(k)}</kbd><span>${esc(t)}</span></p>`).join('')}</div>`;
     o.onclick = () => { o.remove(); this.r.focus({ preventScroll: true }); };
     this.r.append(o);
   }

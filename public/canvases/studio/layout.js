@@ -10,11 +10,12 @@ export const MODES = {
   grid: 'Grid',
   row: 'One row',
   tree: 'Forks as a tree',
-  focus: 'Focus the pointed box',
+  around: 'Around the pointed box',
   stack: 'Tiles (overview)',
 };
 
 export function arrange(doc, mode, { focus = null, origin = { x: 80, y: 80 } } = {}) {
+  if (mode === 'focus') mode = 'around';   // the old name (focus mode is something else now)
   const agents = doc.agents.slice();
   const pos = new Map();
   const W = (a) => a.w, H = (a) => a.h;
@@ -35,7 +36,7 @@ export function arrange(doc, mode, { focus = null, origin = { x: 80, y: 80 } } =
       y = Math.max(y, pos.get(a.id).y + H(a) + GAP);
     };
     for (const a of agents.filter((a) => !a.forkOf?.agent || !agents.some((x) => x.id === a.forkOf.agent))) walk(a, 0);
-  } else if (mode === 'focus' && focus && agents.some((a) => a.id === focus)) {
+  } else if (mode === 'around' && focus && agents.some((a) => a.id === focus)) {
     const f = agents.find((a) => a.id === focus);
     const others = agents.filter((a) => a !== f);
     const small = 360;
